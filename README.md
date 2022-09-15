@@ -1,1 +1,1 @@
-# Biller WooCommerce plugin
+# Biller PrestaShop plugin
