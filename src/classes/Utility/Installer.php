@@ -2,56 +2,63 @@
 
 namespace Biller\PrestaShop\Utility;
 
-use Biller;
-use Biller\Domain\Order\Status;
 use Biller\Infrastructure\Logger\Logger;
-use Biller\Infrastructure\ServiceRegister;
 use Biller\PrestaShop\Bootstrap;
-use Biller\PrestaShop\Repositories\ConfigurationRepository;
-use Biller\PrestaShop\Utility\Config\BillerOrderStatusMapping;
-use Biller\PrestaShop\Utility\Config\BillerPaymentConfiguration;
-use Biller\PrestaShop\Utility\Config\Config;
-use Biller\PrestaShop\Utility\Config\Contract\BillerOrderStatusMapping as BillerOrderStatusMappingInterface;
-use Biller\PrestaShop\Utility\Config\Contract\BillerPaymentConfiguration as BillerPaymentConfigurationInterface;
+use Biller\PrestaShop\Utility\Version\Hooks\Contract\HooksVersionInterface;
+use Configuration;
+use PrestaShopException;
+use Tab;
+use Biller\Infrastructure\ServiceRegister;
 
 /**
- * Class Installer
+ * Class Installer. Contains main logic for installing and uninstalling module.
+ *
  * @package Biller\PrestaShop\Utility
  */
 class Installer
 {
-    /** @var Biller */
-    private $module;
+    /** @var string */
+    const BILLER_NOTIFICATIONS = 'biller_notifications';
+    /** @var string */
+    const BILLER_ORDER_REFERENCE = 'biller_order_reference';
+    /** @var string */
+    const BILLER_COMPANY_INFO = 'biller_company_info';
 
     /** @var string[] */
     private static $controllers = array(
-        'NotificationsHub'
+        'NotificationsHub',
+        'Cancel',
+        'CompanyInfo',
+        'Capture',
     );
 
-    /** @var string[] */
-    private static $hooks = array(
-        'displayAdminOrderContentOrder',
-        'displayAdminOrderTabContent',
-        'actionOrderStatusUpdate',
-        'actionOrderSlipAdd',
-        'actionBuildMailLayoutVariables',
-        'paymentOptions',
-        'displayHeader',
-        'actionAdminControllerSetMedia',
-    );
+    /** @var callable */
+    private $registerHookHandler;
+
+    /** @var callable */
+    private $unregisterHookHandler;
+
+    /** @var string */
+    private $moduleName;
 
     /**
-     * @param Biller $module
+     * @param callable $registerHookHandler
+     * @param callable $unregisterHookHandler
+     *
+     * @param string $moduleName
      */
-    public function __construct(Biller $module)
+    public function __construct($registerHookHandler, $unregisterHookHandler, $moduleName)
     {
-        $this->module = $module;
+        $this->registerHookHandler = $registerHookHandler;
+        $this->unregisterHookHandler = $unregisterHookHandler;
+        $this->moduleName = $moduleName;
     }
 
     /**
-     * Initializes plugin
+     * Initializes plugin.
+     * Creates database tables, adds admin controllers, hooks, order states and initializes configuration values.
      *
-     * @return bool
+     * @return bool Installation status
      */
     public function install()
     {
@@ -60,16 +67,14 @@ class Installer
         return (
             $this->createTables() &&
             $this->addControllers() &&
-            $this->addHooks() &&
-            $this->addOrderStates() &&
-            $this->initConfig()
+            $this->addHooks()
         );
     }
 
     /**
-     * Drop tables and remove hooks
+     * Drop database tables, remove hooks, controller, order states and configuration values
      *
-     * @return bool
+     * @return bool Uninstallation status
      */
     public function uninstall()
     {
@@ -79,43 +84,28 @@ class Installer
             $this->dropTables() &&
             $this->removeControllers() &&
             $this->removeHooks() &&
-            $this->removeOrderStates() &&
             $this->deleteConfig()
         );
     }
 
     /**
-     * @return bool
+     * Create database tables for Biller.
+     *
+     * @return bool Table creation status
      */
     private function createTables()
     {
-        $databaseHandler = new DatabaseHandler();
-
         return (
-            $databaseHandler->createTable('biller_notifications') &&
-            $databaseHandler->createTable('biller_order_reference')
+            DatabaseHandler::createTable(self::BILLER_NOTIFICATIONS, 8) &&
+            DatabaseHandler::createTable(self::BILLER_ORDER_REFERENCE, 8) &&
+            DatabaseHandler::createTable(self::BILLER_COMPANY_INFO, 4)
         );
     }
 
     /**
-     * Drop base tables
+     * Registers module Admin controllers.
      *
-     * @return bool
-     */
-    private function dropTables()
-    {
-        $databaseHandler = new DatabaseHandler();
-
-        return ($databaseHandler->dropTable('biller_notifications')
-            && $databaseHandler->dropTable('biller_order_reference')
-        );
-    }
-
-    /**
-     * Registers module controllers.
-     *
-     * @return bool
-     *
+     * @return bool Controller addition status
      */
     private function addControllers()
     {
@@ -128,21 +118,21 @@ class Installer
     }
 
     /**
-     * Registers a controller.
+     * Registers Admin controller.
      *
-     * @param string $name Controller name.
-     * @param int $parentId Id of parent controller.
+     * @param string $name Controller name
+     * @param int $parentId ID of parent controller
      *
-     * @return bool
+     * @return bool Controller addition status
      */
     private function addController($name, $parentId = -1)
     {
-        $tab = new \Tab();
+        $tab = new Tab();
 
         $tab->active = 1;
-        $tab->name[(int)\Configuration::get('PS_LANG_DEFAULT')] = $this->module->l('biller');
+        $tab->name[(int)Configuration::get('PS_LANG_DEFAULT')] = $this->moduleName;
         $tab->class_name = $name;
-        $tab->module = $this->module->name;
+        $tab->module = $this->moduleName;
         $tab->id_parent = $parentId;
         $tab->add();
 
@@ -150,14 +140,58 @@ class Installer
     }
 
     /**
-     * Removes module controllers.
+     * Call functions with arguments given as second parameter
      *
-     * @return bool
+     * @param callable $handler Callback of function
+     * @param string $arg Argument of function
+     *
+     * @return mixed|void Return value of the called handler
+     */
+    private function call($handler, $arg)
+    {
+        return call_user_func($handler, $arg);
+    }
+
+    /**
+     * Registers module hooks.
+     *
+     * @return bool Hook addition status
+     */
+    private function addHooks()
+    {
+        $hooks = $this->getHooksVersion()->getHooks();
+        $result = true;
+
+        foreach ($hooks as $hook) {
+            $result = $result && $this->call($this->registerHookHandler, $hook);
+        }
+
+        return $result;
+    }
+
+    /**
+     * Drop database tables for Biller.
+     *
+     * @return bool Table deletion status
+     */
+    private function dropTables()
+    {
+        return (
+            DatabaseHandler::dropTable(self::BILLER_NOTIFICATIONS) &&
+            DatabaseHandler::dropTable(self::BILLER_ORDER_REFERENCE) &&
+            DatabaseHandler::dropTable(self::BILLER_COMPANY_INFO)
+        );
+    }
+
+    /**
+     * Removes Admin controllers.
+     *
+     * @return bool Controller deletion status
      */
     private function removeControllers()
     {
         try {
-            $tabs = \Tab::getCollectionFromModule($this->module->name);
+            $tabs = Tab::getCollectionFromModule($this->moduleName);
             if ($tabs && count($tabs)) {
                 foreach ($tabs as $tab) {
                     $tab->delete();
@@ -165,158 +199,49 @@ class Installer
             }
 
             return true;
-        } catch (\PrestaShopException $e) {
-            Logger::logWarning('Error removing controller! Error: ' . $e->getMessage());
+        } catch (PrestaShopException $exception) {
+            Logger::logError('Error removing controller! Error: ' . $exception->getMessage());
 
             return false;
         }
     }
 
     /**
-     * Registers module hooks.
-     *
-     * @return bool
-     */
-    private function addHooks()
-    {
-        $hooks = self::$hooks;
-        $result = true;
-
-        foreach ($hooks as $hook) {
-            $result = $result && $this->module->registerHook($hook);
-        }
-
-        return $result;
-    }
-
-    /**
      * Unregisters module hooks.
      *
-     * @return bool
+     * @return bool Hook deletion status
      */
     private function removeHooks()
     {
-        $hooks = self::$hooks;
+        $hooks = $this->getHooksVersion()->getHooks();
         $result = true;
         foreach ($hooks as $hook) {
-            $result = $result && $this->module->unregisterHook($hook);
+            $result = $result && $this->call($this->unregisterHookHandler, $hook);
         }
 
         return $result;
-    }
-
-    /**
-     * Adds 'None' order state to the shop.
-     *
-     * @return bool
-     */
-    private function addOrderStates()
-    {
-        $orderState = new \OrderState();
-
-        $orderState->send_email = false;
-        $orderState->color = '#B4B9C4';
-        $orderState->hidden = false;
-        $orderState->delivery = false;
-        $orderState->logable = false;
-        $orderState->invoice = false;
-        $orderState->module_name = $this->module->name;
-        $orderState->name = TranslationUtility::createMultiLanguageField('None');
-        try {
-            if ($orderState->add()) {
-                ConfigurationRepository::updateValue(Config::BILLER_ORDER_STATUS_NONE_KEY, (int)$orderState->id);
-
-                return true;
-            }
-        } catch (\Exception $e) {}
-
-        return false;
-    }
-
-    /**
-     * Removes 'None' order state from the shop.
-     *
-     * @return bool
-     */
-    private function removeOrderStates()
-    {
-        /** @var BillerOrderStatusMapping $orderStatusMapping */
-        $orderStatusMapping = ServiceRegister::getService(BillerOrderStatusMappingInterface::class);
-        $availableStatuses = $orderStatusMapping->getAvailableStatuses();
-
-        $deletionStatus = true;
-        array_map(function($status) use (&$deletionStatus) {
-            if ($status['module_name'] === $this->module->name) {
-                try {
-                    $orderState = new \OrderState($status['id_order_state']);
-                    $orderState->delete();
-                } catch (\PrestaShopException $e) {
-                    $deletionStatus = false;
-                }
-            }
-        }, $availableStatuses);
-
-        return $deletionStatus;
-    }
-
-    /**
-     * Initializes module configuration.
-     *
-     * @return bool
-     */
-    private function initConfig()
-    {
-        /** @var BillerPaymentConfiguration $paymentConfiguration */
-        $paymentConfiguration = ServiceRegister::getService(BillerPaymentConfigurationInterface::class);
-
-        $paymentConfiguration->setName($this->module->l('Biller business invoice'));
-        $paymentConfiguration->setDescription(
-            $this->module->l('The payment solution that advances both sides. We pay out every invoice on time.')
-        );
-        $paymentConfiguration->setMethodEnabledStatus(1);
-
-        /** @var BillerOrderStatusMapping $orderStatusMapping */
-        $orderStatusMapping = ServiceRegister::getService(BillerOrderStatusMappingInterface::class);
-
-        $noneOrderStatusId = ConfigurationRepository::getValue(Config::BILLER_ORDER_STATUS_NONE_KEY);
-        $defaultOrderStatusMap = array_merge(
-            BillerOrderStatusMapping::DEFAULT_ORDER_STATUS_MAP,
-            array(
-                Status::BILLER_STATUS_PARTIALLY_REFUNDED => $noneOrderStatusId,
-                Status::BILLER_STATUS_PARTIALLY_CAPTURED => $noneOrderStatusId,
-            )
-        );
-        $orderStatusMapping->saveOrderStatusMap($defaultOrderStatusMap);
-
-        return true;
     }
 
     /**
      * Deletes Biller configuration values from database.
      *
-     * @return bool
+     * @return bool Config deletion status
      */
     private function deleteConfig()
     {
-        $configValueKeys = array(
-            Config::BILLER_ENABLE_BUSINESS_INVOICE_KEY,
-            Config::BILLER_MODE_KEY,
-            Config::BILLER_WEBSHOP_UID_KEY,
-            Config::BILLER_USERNAME_KEY,
-            Config::BILLER_PASSWORD_KEY,
-            Config::BILLER_USER_INFO_LIVE_KEY,
-            Config::BILLER_USER_INFO_SANDBOX_KEY,
-            Config::BILLER_NAME_KEY,
-            Config::BILLER_DESCRIPTION_KEY,
-            Config::BILLER_ORDER_STATUS_MAP_KEY,
-            Config::BILLER_ORDER_STATUS_NONE_KEY,
-        );
-        $result = true;
+        return DatabaseHandler::deleteRows('configuration', "name LIKE '%BILLER%'");
+    }
 
-        foreach ($configValueKeys as $configValueKey) {
-            $result = $result && \Configuration::deleteByName($configValueKey);
-        }
-
-        return $result;
+    /**
+     * Returns HooksVersion class depending on used PrestaShop version.
+     * For versions from 1.6.0.14 to 1.7.0.0 HooksVersion16 is returned.
+     * For versions from 1.7.0.0 to 1.7.7.0 HooksVersion17  is returned.
+     * For versions from 1.7.7.0+ HooksVersion177 is returned.
+     *
+     * @return HooksVersionInterface
+     */
+    private function getHooksVersion()
+    {
+        return ServiceRegister::getService(HooksVersionInterface::class);
     }
 }

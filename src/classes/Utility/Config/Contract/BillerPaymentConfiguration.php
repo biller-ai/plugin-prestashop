@@ -3,7 +3,7 @@
 namespace Biller\PrestaShop\Utility\Config\Contract;
 
 /**
- * BillerPaymentConfiguration interface;
+ * Interface BillerPaymentConfiguration interface. For accessing module configuration.
  *
  * @package Biller\PrestaShop\Utility\Config\Contract
  */
@@ -36,18 +36,4 @@ interface BillerPaymentConfiguration
      * @param string $description
      */
     public function setDescription($description);
-
-    /**
-     * Returns Biller enabled status
-     *
-     * @return int
-     */
-    public function getMethodEnabledStatus();
-
-    /**
-     * Stores Biller enabled status
-     *
-     * @param int $enabled
-     */
-    public function setMethodEnabledStatus($enabled);
 }

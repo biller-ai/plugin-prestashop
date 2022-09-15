@@ -10,19 +10,21 @@ use Biller\Infrastructure\ORM\QueryFilter\Operators;
 use Biller\Infrastructure\ORM\QueryFilter\QueryCondition;
 use Biller\Infrastructure\ORM\QueryFilter\QueryFilter;
 use Biller\Infrastructure\ORM\Utility\IndexHelper;
-use Biller\PrestaShop\Utility\TranslationUtility;
+use PrestaShopDatabaseException;
+use PrestaShopException;
 
 /**
- * BaseRepository class.
+ * Class BaseRepository. Implements basic CRUD operations using core ORM entities.
  *
  * @package Biller\PrestaShop\Repositories
  */
 class BaseRepository implements RepositoryInterface
 {
     /**
-     * Name of the base entity table in database.
+     * Name of the base entity table in database. Empty string since the plugin doesn't have its own base table but
+     * instead uses Presta's configuration table.
      */
-    const TABLE_NAME = 'biller_base';
+    const TABLE_NAME = '';
     /**
      * Fully qualified name of this class.
      */
@@ -39,7 +41,7 @@ class BaseRepository implements RepositoryInterface
     /**
      * Returns full class name.
      *
-     * @return string Full class name.
+     * @return string Full class name
      */
     public static function getClassName()
     {
@@ -49,7 +51,7 @@ class BaseRepository implements RepositoryInterface
     /**
      * Sets repository entity.
      *
-     * @param string $entityClass Repository entity class.
+     * @param string $entityClass Repository entity class
      */
     public function setEntityClass($entityClass)
     {
@@ -59,13 +61,13 @@ class BaseRepository implements RepositoryInterface
     /**
      * Executes select query and returns first result.
      *
-     * @param QueryFilter|null $filter Filter for query.
+     * @param QueryFilter|null $filter Filter for query
      *
-     * @return Entity|null First found entity or NULL.
+     * @return Entity|null First found entity or NULL
      *
      * @throws QueryFilterInvalidParamException
-     * @throws \PrestaShopDatabaseException
-     * @throws \PrestaShopException
+     * @throws PrestaShopDatabaseException
+     * @throws PrestaShopException
      */
     public function selectOne(QueryFilter $filter = null)
     {
@@ -82,13 +84,13 @@ class BaseRepository implements RepositoryInterface
     /**
      * Executes select query.
      *
-     * @param QueryFilter $filter Filter for query.
+     * @param QueryFilter $filter Filter for query
      *
-     * @return Entity[] A list of found entities ot empty array.
+     * @return Entity[] A list of found entities ot empty array
      *
      * @throws QueryFilterInvalidParamException
-     * @throws \PrestaShopDatabaseException
-     * @throws \PrestaShopException
+     * @throws PrestaShopDatabaseException
+     * @throws PrestaShopException
      */
     public function select(QueryFilter $filter = null)
     {
@@ -109,13 +111,222 @@ class BaseRepository implements RepositoryInterface
     }
 
     /**
+     * Executes insert query and returns ID of created entity. Entity will be updated with new ID.
+     *
+     * @param Entity $entity Entity to be saved
+     *
+     * @return int Identifier of saved entity
+     *
+     * @throws PrestaShopDatabaseException
+     */
+    public function save(Entity $entity)
+    {
+        $indexes = IndexHelper::transformFieldsToIndexes($entity);
+        $record = $this->prepareDataForInsertOrUpdate($entity, $indexes);
+        $record['type'] = pSQL($entity->getConfig()->getType());
+
+        $result = \Db::getInstance()->insert(static::TABLE_NAME, $record);
+
+        if (!$result) {
+            $type = $entity->getConfig()->getType();
+            $dbErrorMessage = \Db::getInstance()->getMsgError();
+            $message = "Entity $type cannot be inserted. Error: $dbErrorMessage";
+
+            Logger::logError($message);
+
+            throw new \RuntimeException($message);
+        }
+
+        $entity->setId((int)\Db::getInstance()->Insert_ID());
+
+        return $entity->getId();
+    }
+
+    /**
+     * Executes update query and returns success flag.
+     *
+     * @param Entity $entity Entity to be updated
+     *
+     * @return bool TRUE if operation succeeded; otherwise, FALSE
+     */
+    public function update(Entity $entity)
+    {
+        $indexes = IndexHelper::transformFieldsToIndexes($entity);
+        $record = $this->prepareDataForInsertOrUpdate($entity, $indexes);
+
+        $id = $entity->getId();
+        $result = \Db::getInstance()->update(static::TABLE_NAME, $record, "id = $id");
+        if (!$result) {
+            $type = $entity->getConfig()->getType();
+
+            Logger::logError("Entity $type with ID $id cannot be updated.");
+        }
+
+        return $result;
+    }
+
+    /**
+     * Deletes entities identified by filter.
+     *
+     * @param QueryFilter $filter Filter used for ident
+     *
+     * @return void
+     *
+     * @throws QueryFilterInvalidParamException
+     */
+    public function deleteWhere(QueryFilter $filter)
+    {
+        $entity = new $this->entityClass;
+
+        $fieldIndexMap = IndexHelper::mapFieldsToIndexes($entity);
+        $groups = $this->buildConditionGroups($filter, $fieldIndexMap);
+        $type = $entity->getConfig()->getType();
+
+        $typeCondition = "type='" . pSQL($type) . "'";
+        $whereCondition = $this->buildWhereCondition($groups, $fieldIndexMap);
+        $result = $this->deleteRecordsByCondition(
+            $typeCondition . (!empty($whereCondition) ? ' AND ' . $whereCondition : ''),
+            $filter
+        );
+
+        if (!$result) {
+            $id = $entity->getId();
+
+            Logger::logError(
+                "Could not delete entity $type with ID $id."
+            );
+        }
+    }
+
+    /**
+     * Executes delete query and returns success flag.
+     *
+     * @param Entity $entity Entity to be deleted
+     *
+     * @return bool TRUE if operation succeeded; otherwise, FALSE
+     */
+    public function delete(Entity $entity)
+    {
+        $id = $entity->getId();
+        $result = \Db::getInstance()->delete(static::TABLE_NAME, "id = $id");
+
+        if (!$result) {
+            $type = $entity->getConfig()->getType();
+
+            Logger::logError(
+                "Could not delete entity $type with ID $id."
+            );
+        }
+
+        return $result;
+    }
+
+    /**
+     * Counts records that match filter criteria.
+     *
+     * @param QueryFilter $filter Filter for query
+     *
+     * @return int Number of records that match filter criteria
+     *
+     * @throws QueryFilterInvalidParamException
+     * @throws PrestaShopDatabaseException
+     * @throws PrestaShopException
+     */
+    public function count(QueryFilter $filter = null)
+    {
+        return count($this->select($filter));
+    }
+
+    /**
+     * Returns columns that should be in the result of a select query on Biller entity table.
+     *
+     * @return array Select columns
+     */
+    protected function getSelectColumns()
+    {
+        return array('id', 'data');
+    }
+
+    /**
+     * Returns index mapped to given property.
+     *
+     * @param string $property Property name
+     *
+     * @return string Index column in Biller entity table
+     */
+    protected function getIndexMapping($property)
+    {
+        if ($this->indexMapping === null) {
+            $this->indexMapping = IndexHelper::mapFieldsToIndexes(new $this->entityClass);
+        }
+
+        if (array_key_exists($property, $this->indexMapping)) {
+            return 'index_' . $this->indexMapping[$property];
+        }
+
+        return null;
+    }
+
+    /**
+     * Translates database records to Biller entities.
+     *
+     * @param array $records Array of database records
+     *
+     * @return Entity[] Array of unserialized entities
+     */
+    protected function unserializeEntities($records)
+    {
+        $entities = array();
+        foreach ($records as $record) {
+            $entity = $this->unseralizeEntity($record['data']);
+            if ($entity !== null) {
+                $entity->setId((int)$record['id']);
+                $entities[] = $entity;
+            }
+        }
+
+        return $entities;
+    }
+
+    /**
+     * Prepares data for inserting a new record or updating an existing one.
+     *
+     * @param Entity $entity Biller entity object
+     * @param array $indexes Entities' indexes
+     *
+     * @return array Prepared record for inserting or updating
+     */
+    protected function prepareDataForInsertOrUpdate(Entity $entity, array $indexes)
+    {
+        $record = array('data' => pSQL($this->serializeEntity($entity), true));
+
+        foreach ($indexes as $index => $value) {
+            $record['index_' . $index] = $value !== null ? pSQL($value, true) : null;
+        }
+
+        return $record;
+    }
+
+    /**
+     * Serializes Entity to string.
+     *
+     * @param Entity $entity Entity to be serialized
+     *
+     * @return string Serialized entity
+     */
+    protected function serializeEntity(Entity $entity)
+    {
+        return json_encode($entity->toArray());
+    }
+
+    /**
      * Builds condition groups (each group is chained with OR internally, and with AND externally) based on query
      * filter.
      *
-     * @param QueryFilter $filter Query filter object.
-     * @param array $fieldIndexMap Map of property indexes.
+     * @param QueryFilter $filter Query filter object
+     * @param array $fieldIndexMap Map of property indexes
      *
-     * @return array Array of condition groups.
+     * @return array Array of condition groups
      *
      * @throws QueryFilterInvalidParamException
      */
@@ -130,8 +341,10 @@ class BaseRepository implements RepositoryInterface
             }
 
             if (!array_key_exists($condition->getColumn(), $fieldIndexMap)) {
+                $column = $condition->getColumn();
+
                 throw new QueryFilterInvalidParamException(
-                    TranslationUtility::__('Field %s is not indexed!', array($condition->getColumn()))
+                    "Field $column is not indexed!"
                 );
             }
 
@@ -145,10 +358,10 @@ class BaseRepository implements RepositoryInterface
      * Builds WHERE statement of SELECT query by separating AND and OR conditions.
      * Output format: (C1 AND C2) OR (C3 AND C4) OR (C5 AND C6 AND C7)
      *
-     * @param array $groups Array of condition groups.
-     * @param array $fieldIndexMap Map of property indexes.
+     * @param array $groups Array of condition groups
+     * @param array $fieldIndexMap Map of property indexes
      *
-     * @return string Fully formed WHERE statement.
+     * @return string Fully formed WHERE statement
      */
     private function buildWhereCondition(array $groups, array $fieldIndexMap)
     {
@@ -172,10 +385,10 @@ class BaseRepository implements RepositoryInterface
     /**
      * Filters records by given condition.
      *
-     * @param QueryCondition $condition Query condition object.
-     * @param array $indexMap Map of property indexes.
+     * @param QueryCondition $condition Query condition object
+     * @param array $indexMap Map of property indexes
      *
-     * @return string A single WHERE condition.
+     * @return string A single WHERE condition
      */
     private function addCondition(QueryCondition $condition, array $indexMap)
     {
@@ -216,14 +429,14 @@ class BaseRepository implements RepositoryInterface
     /**
      * Returns Biller entity records that satisfy provided condition.
      *
-     * @param string $condition Condition in format: KEY OPERATOR VALUE.
-     * @param QueryFilter|null $filter Query filter object.
+     * @param string $condition Condition in format: KEY OPERATOR VALUE
+     * @param QueryFilter|null $filter Query filter object
      *
-     * @return array Array of Biller entity records.
+     * @return array Array of Biller entity records
      *
      * @throws QueryFilterInvalidParamException
-     * @throws \PrestaShopDatabaseException
-     * @throws \PrestaShopException
+     * @throws PrestaShopDatabaseException
+     * @throws PrestaShopException
      */
     private function getRecordsByCondition($condition, QueryFilter $filter = null)
     {
@@ -239,20 +452,10 @@ class BaseRepository implements RepositoryInterface
     }
 
     /**
-     * Returns columns that should be in the result of a select query on Biller entity table.
-     *
-     * @return array Select columns.
-     */
-    protected function getSelectColumns()
-    {
-        return array('id', 'data');
-    }
-
-    /**
      * Applies limit and order by statements to provided SELECT query.
      *
-     * @param \DbQuery $query SELECT query.
-     * @param QueryFilter|null $filter Query filter object.
+     * @param \DbQuery $query SELECT query
+     * @param QueryFilter|null $filter Query filter object
      *
      * @return void
      *
@@ -272,10 +475,7 @@ class BaseRepository implements RepositoryInterface
                 $indexedColumn = $orderByColumn === 'id' ? 'id' : $this->getIndexMapping($orderByColumn);
                 if (empty($indexedColumn)) {
                     throw new QueryFilterInvalidParamException(
-                        TranslationUtility::__(
-                            'Unknown or not indexed OrderBy column %s',
-                            array($filter->getOrderByColumn())
-                        )
+                        "Unknown or not indexed OrderBy column $orderByColumn"
                     );
                 }
 
@@ -285,52 +485,11 @@ class BaseRepository implements RepositoryInterface
     }
 
     /**
-     * Returns index mapped to given property.
-     *
-     * @param string $property Property name.
-     *
-     * @return string Index column in Biller entity table.
-     */
-    protected function getIndexMapping($property)
-    {
-        if ($this->indexMapping === null) {
-            $this->indexMapping = IndexHelper::mapFieldsToIndexes(new $this->entityClass);
-        }
-
-        if (array_key_exists($property, $this->indexMapping)) {
-            return 'index_' . $this->indexMapping[$property];
-        }
-
-        return null;
-    }
-
-    /**
-     * Translates database records to Biller entities.
-     *
-     * @param array $records Array of database records.
-     *
-     * @return Entity[]
-     */
-    protected function unserializeEntities($records)
-    {
-        $entities = array();
-        foreach ($records as $record) {
-            $entity = $this->unseralizeEntity($record['data']);
-            if ($entity !== null) {
-                $entity->setId((int)$record['id']);
-                $entities[] = $entity;
-            }
-        }
-
-        return $entities;
-    }
-
-    /**
      * Unserialize entity from given string.
      *
-     * @param string $data Serialized entity as string.
+     * @param string $data Serialized entity as string
      *
-     * @return Entity Created entity object.
+     * @return Entity Created entity object
      */
     private function unseralizeEntity($data)
     {
@@ -348,185 +507,16 @@ class BaseRepository implements RepositoryInterface
     }
 
     /**
-     * Executes insert query and returns ID of created entity. Entity will be updated with new ID.
-     *
-     * @param Entity $entity Entity to be saved.
-     *
-     * @return int Identifier of saved entity.
-     * @throws \PrestaShopDatabaseException
-     */
-    public function save(Entity $entity)
-    {
-        $indexes = IndexHelper::transformFieldsToIndexes($entity);
-        $record = $this->prepareDataForInsertOrUpdate($entity, $indexes);
-        $record['type'] = pSQL($entity->getConfig()->getType());
-
-        $result = \Db::getInstance()->insert(static::TABLE_NAME, $record);
-
-        if (!$result) {
-            $message = TranslationUtility::__(
-                'Entity %s cannot be inserted. Error: %s',
-                array($entity->getConfig()->getType(), \Db::getInstance()->getMsgError())
-            );
-            Logger::logError($message);
-
-            throw new \RuntimeException($message);
-        }
-
-        $entity->setId((int)\Db::getInstance()->Insert_ID());
-
-        return $entity->getId();
-    }
-
-    /**
-     * Prepares data for inserting a new record or updating an existing one.
-     *
-     * @param Entity $entity Biller entity object.
-     * @param array $indexes
-     *
-     * @return array Prepared record for inserting or updating.
-     */
-    protected function prepareDataForInsertOrUpdate(Entity $entity, array $indexes)
-    {
-        $record = array('data' => pSQL($this->serializeEntity($entity), true));
-
-        foreach ($indexes as $index => $value) {
-            $record['index_' . $index] = $value !== null ? pSQL($value, true) : null;
-        }
-
-        return $record;
-    }
-
-    /**
-     * Serializes Entity to string.
-     *
-     * @param Entity $entity Entity to be serialized.
-     * @return string Serialized entity.
-     */
-    protected function serializeEntity(Entity $entity)
-    {
-        return json_encode($entity->toArray());
-    }
-
-    /**
-     * Executes update query and returns success flag.
-     *
-     * @param Entity $entity Entity to be updated.
-     *
-     * @return bool TRUE if operation succeeded; otherwise, FALSE.
-     */
-    public function update(Entity $entity)
-    {
-        $indexes = IndexHelper::transformFieldsToIndexes($entity);
-        $record = $this->prepareDataForInsertOrUpdate($entity, $indexes);
-
-        $id = $entity->getId();
-        $result = \Db::getInstance()->update(static::TABLE_NAME, $record, "id = $id");
-        if (!$result) {
-            $message = TranslationUtility::__(
-                'Entity %s with ID %d cannot be updated.',
-                array(
-                    $entity->getConfig()->getType(),
-                    $id,
-                )
-            );
-            Logger::logError($message);
-        }
-
-        return $result;
-    }
-
-    /**
-     * Deletes entities identified by filter.
-     *
-     * @param QueryFilter $filter Filter used for ident.
-     *
-     * @return void
-     *
-     * @throws QueryFilterInvalidParamException
-     */
-    public function deleteWhere(QueryFilter $filter)
-    {
-        $entity = new $this->entityClass;
-
-        $fieldIndexMap = IndexHelper::mapFieldsToIndexes($entity);
-        $groups = $this->buildConditionGroups($filter, $fieldIndexMap);
-        $type = $entity->getConfig()->getType();
-
-        $typeCondition = "type='" . pSQL($type) . "'";
-        $whereCondition = $this->buildWhereCondition($groups, $fieldIndexMap);
-        $result = $this->deleteRecordsByCondition(
-            $typeCondition . (!empty($whereCondition) ? ' AND ' . $whereCondition : ''),
-            $filter
-        );
-
-        if (!$result) {
-            Logger::logError(
-                TranslationUtility::__(
-                    'Could not delete entity %s with ID %d.',
-                    array(
-                        $entity->getConfig()->getType(),
-                        $entity->getId(),
-                    )
-                )
-            );
-        }
-    }
-
-    /**
      * Deletes Biller entity records satisfying provided condition.
      *
-     * @param string $condition Condition in format: KEY OPERATOR VALUE.
-     * @param QueryFilter|null $filter Query filter object.
+     * @param string $condition Condition in format: KEY OPERATOR VALUE
+     * @param QueryFilter|null $filter Query filter object
      *
-     * @return bool
+     * @return bool Deletion status
      */
     private function deleteRecordsByCondition($condition, QueryFilter $filter = null)
     {
         $limit = $filter ? $filter->getLimit() : 0;
         return \Db::getInstance()->delete(static::TABLE_NAME, $condition, $limit);
-    }
-
-    /**
-     * Executes delete query and returns success flag.
-     *
-     * @param Entity $entity Entity to be deleted.
-     *
-     * @return bool TRUE if operation succeeded; otherwise, FALSE.
-     */
-    public function delete(Entity $entity)
-    {
-        $id = $entity->getId();
-        $result = \Db::getInstance()->delete(static::TABLE_NAME, "id = $id");
-
-        if (!$result) {
-            Logger::logError(
-                TranslationUtility::__(
-                    'Could not delete entity %s with ID %d.',
-                    array(
-                        $entity->getConfig()->getType(),
-                        $entity->getId(),
-                    )
-                )
-            );
-        }
-
-        return $result;
-    }
-
-    /**
-     * Counts records that match filter criteria.
-     *
-     * @param QueryFilter $filter Filter for query.
-     *
-     * @return int Number of records that match filter criteria.
-     *
-     * @throws QueryFilterInvalidParamException
-     * @throws \PrestaShopDatabaseException
-     * @throws \PrestaShopException
-     */
-    public function count(QueryFilter $filter = null)
-    {
-        return count($this->select($filter));
     }
 }

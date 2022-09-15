@@ -7,16 +7,15 @@ use Biller\PrestaShop\Bootstrap;
 use Biller\PrestaShop\Utility\Config\Contract\BillerOrderStatusMapping as BillerOrderStatusMappingInterface;
 use Biller\PrestaShop\Utility\Config\BillerOrderStatusMapping;
 use Biller\Domain\Order\Status;
-use Biller\BusinessLogic\API\Http\Exceptions\RequestNotSuccessfulException;
-use Biller\BusinessLogic\Order\Exceptions\InvalidOrderReferenceException;
-use Biller\Infrastructure\Http\Exceptions\HttpCommunicationException;
-use Biller\Infrastructure\Http\Exceptions\HttpRequestException;
-use Biller\Infrastructure\ORM\Exceptions\QueryFilterInvalidParamException;
+use Biller\BusinessLogic\Integration\Order\OrderStatusTransitionService as OrderStatusTransitionServiceInterface;
+use Biller\PrestaShop\BusinessService\OrderStatusTransitionService;
 
-
+/**
+ * Class BillerSuccessModuleFrontController
+ * Used for handling success case from Biller and redirecting to Order confirmation page.
+ */
 class BillerSuccessModuleFrontController extends ModuleFrontController
 {
-
     public function __construct()
     {
         parent::__construct();
@@ -25,51 +24,89 @@ class BillerSuccessModuleFrontController extends ModuleFrontController
     }
 
     /**
+     * Handle success from Biller and redirect to order-confirmation page.
+     *
      * @return void
-     * * @throws PrestaShopException
+     *
+     * @throws PrestaShopDatabaseException
+     * @throws PrestaShopException
      */
     public function postProcess()
     {
-        /** @var  OrderService $orderService */
+        $isPaymentLink = Tools::getIsset('orderId');
+        if ($isPaymentLink) {
+            // payment link
+            $orderId = Tools::getValue('orderId');
+            /** @noinspection PhpUnhandledExceptionInspection */
+            $order = new Order($orderId);
+            $cart = new Cart($order->id_cart);
+        } else {
+            // checkout
+            $cart = Context::getContext()->cart;
+        }
+
+        /** @var OrderService $orderService */
         $orderService = ServiceRegister::getService(OrderService::class);
-        $cart = Context::getContext()->cart;
         try {
             if ($orderService->isPaymentAccepted($cart->id)) {
-                $this->createOrder($cart);
+                $orderAcceptedStatusId = $this->getOrderAcceptedStatus();
+
+                if (!$isPaymentLink) {
+                    $this->createOrder($cart, $orderAcceptedStatusId);
+                } else {
+                    $this->getOrderStatusTransitionService()->updateStatus(
+                        $cart->id,
+                        Status::fromString(Status::BILLER_STATUS_ACCEPTED)
+                    );
+                }
+
                 $successUrl = $this->generateSuccessURL($cart);
+
                 Tools::redirect($successUrl);
             }
-        } catch (RequestNotSuccessfulException $e) {
-            Logger::logError('Request not successful!' . $e->getMessage());
-        } catch (InvalidOrderReferenceException $e) {
-            Logger::logError('Invalid order reference!' . $e->getMessage());
-        } catch (HttpCommunicationException $e) {
-            Logger::logError('Http communication exception!' . $e->getMessage());
-        } catch (HttpRequestException $e) {
-            Logger::logError('Http request exception!' . $e->getMessage());
-        } catch (QueryFilterInvalidParamException $e) {
-            Logger::logError('Query filter invalid parameters exception!' . $e->getMessage());
-        } catch (Exception $e) {
-            Logger::logError('Creation order failed!' . $e->getMessage());
+        } catch (Exception $exception) {
+            Logger::logError('Creation order failed!' . $exception->getMessage());
         }
     }
 
     /**
-     * @param \Cart $cart
-     * @return void
-     * @throws \Exception
+     * Gets id of PS order status currently that's Biller accepted status currently mapped to.
+     *
+     * @return int ID of PS accepted order status
      */
-    private function createOrder($cart)
+    private function getOrderAcceptedStatus()
     {
         /** @var BillerOrderStatusMapping $orderStatusMapperService */
         $orderStatusMapperService = ServiceRegister::getService(BillerOrderStatusMappingInterface::class);
-        $idStatus = $orderStatusMapperService->getOrderStatusMap()[Status::BILLER_STATUS_ACCEPTED];
-        $total = $cart->getOrderTotal();
-        $this->module->validateOrder($cart->id, $idStatus, $total, $this->module->displayName);
+        return $orderStatusMapperService->getOrderStatusMap()[Status::BILLER_STATUS_ACCEPTED];
     }
 
     /**
-     * @param \Cart $cart
+     * Creates presta from the given cart order.
+     *
+     * @param Cart $cart Cart for order creation
+     * @param int $orderAcceptedStatusId ID of accepted order state
+     *
+     * @return void
+     *
+     * @throws Exception
+     */
+    private function createOrder($cart, $orderAcceptedStatusId)
+    {
+        $total = $cart->getOrderTotal();
+        $this->module->validateOrder(
+            $cart->id,
+            $orderAcceptedStatusId,
+            $total,
+            $this->module->displayName
+        );
+    }
+
+    /**
+     * Create URL to order-confirmation page.
+     *
+     * @param Cart $cart
+     *
      * @return string
      */
     private function generateSuccessURL($cart)
@@ -78,12 +115,24 @@ class BillerSuccessModuleFrontController extends ModuleFrontController
             'order-confirmation',
             true,
             null,
-            [
+            array(
                 'id_cart' => (int)$cart->id,
                 'id_module' => (int)$this->module->id,
                 'id_order' => $this->module->currentOrder,
-                'key' => $cart->secure_key,
-            ]
+                'key' => $cart->secure_key
+            )
+        );
+    }
+
+    /**
+     * Returns order status transition service from service register.
+     *
+     * @return OrderStatusTransitionService
+     */
+    private function getOrderStatusTransitionService()
+    {
+        return ServiceRegister::getService(
+            OrderStatusTransitionServiceInterface::class
         );
     }
 }

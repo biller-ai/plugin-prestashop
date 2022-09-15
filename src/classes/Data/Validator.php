@@ -2,95 +2,126 @@
 
 namespace Biller\PrestaShop\Data;
 
-use BillerPaymentModuleFrontController;
-use PrestaShop\PrestaShop\Adapter\Entity\Address;
+use Module;
 use Tools;
 
+/**
+ * Class Validator. Used for validation of Biller input fields on checkout page.
+ *
+ * @package Biller\PrestaShop\Data
+ */
 class Validator
 {
+    /** @var string File name for translation contextualization */
+    const FILE_NAME = 'Validator';
+
     /**
-     * @param BillerPaymentModuleFrontController $controller
-     * @param \Cart $cart
-     * @return void
+     * @var array Array of error messages
      */
-    public static function validate($controller, $cart)
+    private static $errors;
+
+    /**
+     * Returns array of errors.
+     *
+     * @return array Array of error messages
+     */
+    public static function getErrors()
     {
-        $address = new Address($cart->id_address_delivery);
-        Validator::validateCompanyName($controller, $address);
-        Validator::validateCompanyNameLength($controller, $address);
-        Validator::validateRegistrationNumber($controller);
-        Validator::validateVatNumber($controller, $address);
+        return self::$errors;
     }
 
     /**
-     * @param BillerPaymentModuleFrontController $controller
-     * @param Address $address
+     * Validate order details - company name, vat number and registration number.
+     *
+     * @return bool True if inputs are valid, false otherwise
+     */
+    public static function validate()
+    {
+        self::isCompanyNameValid();
+        self::isCompanyNameLengthValid();
+        self::isRegistrationNumberValid();
+        self::isVatNumberValid();
+
+        if (
+            !empty(self::$errors)
+        ) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Validates vat number format if vat number is set.
+     *
      * @return void
      */
-    private static function validateVatNumber($controller, $address)
+    private static function isVatNumberValid()
     {
-        if ((Tools::getIsset('vat_number') &&
+        if (
+            Tools::getIsset('vat_number') &&
             Tools::getValue('vat_number') &&
-            !is_numeric(Tools::getValue('vat_number')))) {
-            Validator::redirect($controller, 'Invalid field: Vat number should be a numeric value!');
-        } elseif (!Tools::getIsset('vat_number') &&
-            isset($address->vat_number) &&
-            !is_numeric($address->vat_number)) {
-            Validator::redirect($controller, 'Invalid field: Vat number should be a numeric value!');
+            !is_numeric(Tools::getValue('vat_number'))
+        ) {
+            self::addError(Module::getInstanceByName('biller')->l('Invalid field: Vat number should be a numeric value!', self::FILE_NAME));
         }
     }
 
     /**
-     * @param BillerPaymentModuleFrontController $controller
-     * @param Address $address
+     * Validates registration number format if vat number is set.
+     *
      * @return void
      */
-    private static function validateRegistrationNumber($controller)
+    private static function isRegistrationNumberValid()
     {
-        if ((Tools::getIsset('registration_number') &&
+        if (
+            Tools::getIsset('registration_number') &&
             Tools::getValue('registration_number') &&
-            !is_numeric(Tools::getValue('registration_number')))) {
-            Validator::redirect($controller, 'Invalid field: Registration number should be a numeric value!');
+            !is_numeric(Tools::getValue('registration_number'))
+        ) {
+            self::addError(Module::getInstanceByName('biller')->l('Invalid field: Registration number should be a numeric value!', self::FILE_NAME));
         }
     }
 
     /**
-     * @param BillerPaymentModuleFrontController $controller
-     * @param Address $address
+     * Validates if company name is set. Company name is required.
+     *
      * @return void
      */
-    private static function validateCompanyName($controller, $address)
+    private static function isCompanyNameValid()
     {
-        if ((Tools::getIsset('company_name') && !Tools::getValue('company_name'))) {
-            Validator::redirect($controller, 'Company name is required!');
-        } elseif (!Tools::getIsset('company_name') &&
-            !$address->company) {
-            Validator::redirect($controller, 'Company name is required!');
+        if (
+            Tools::getIsset('company_name') &&
+            !Tools::getValue('company_name')
+        ) {
+            self::addError(Module::getInstanceByName('biller')->l('Company name is required!', self::FILE_NAME));
         }
     }
 
     /**
-     * @param BillerPaymentModuleFrontController $controller
-     * @param Address $address
+     * Validates if company name has at least 2 characters.
+     *
      * @return void
      */
-    private static function validateCompanyNameLength($controller, $address)
+    private static function isCompanyNameLengthValid()
     {
-        if ((Tools::getIsset('company_name') && strlen(Tools::getValue('company_name')) < 2)) {
-            Validator::redirect($controller, 'Company name has to have at least 2 characters!');
-        } elseif (!Tools::getIsset('company_name') && strlen($address->company) < 2) {
-            Validator::redirect($controller, 'Company name has to have at least 2 characters!!');
+        if (
+            Tools::getIsset('company_name')
+            && strlen(Tools::getValue('company_name')) < 2
+        ) {
+            self::addError(Module::getInstanceByName('biller')->l('Company name has to have at least 2 characters!', self::FILE_NAME));
         }
     }
 
     /**
-     * @param BillerPaymentModuleFrontController $controller
-     * @param string $message
+     * Adds new error message.
+     *
+     * @param string $error Error message to be added
+     *
      * @return void
      */
-    private static function redirect($controller, $message)
+    private static function addError($error)
     {
-        $controller->errors[] = $controller->module->l($message);
-        $controller->redirectWithNotifications(\Context::getContext()->link->getPageLink('order'));
+        self::$errors[] = $error;
     }
 }

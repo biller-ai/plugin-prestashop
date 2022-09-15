@@ -5,16 +5,64 @@
     display: table
 }
 
-p.biller-version{
+p.biller-version {
     width: 83.33%;
     margin: auto;
     text-align: right;
 }
 
-input.biller-medium-input{
-    width: 350px!important;
+.bootstrap .form-control, .bootstrap input[type="text"],
+.bootstrap input[type="search"],
+.bootstrap input[type="password"], .bootstrap textarea, .bootstrap select input.biller-medium-input {
+    width: 350px;
 }
 
-.biller-password-hide-btn{
-    background-color: rgb(233,233,237);
+.biller-password-hide-btn {
+    background-color: rgb(233, 233, 237);
 }
+
+@media (max-width: 299px) {
+    #PASSWORD_KEY.fixed-width-xl {
+        width: 50px !important;
+    }
+}
+
+@media (min-width: 300px) and (max-width: 450px) {
+    #PASSWORD_KEY.fixed-width-xl {
+        width: 120px !important;
+    }
+}
+
+@media (max-width: 299px) {
+    .bootstrap .form-control, .bootstrap input[type="text"],
+    .bootstrap input[type="search"], .bootstrap input[type="password"],
+    .bootstrap textarea, .bootstrap select.fixed-width-xl  {
+        width: 150px !important;
+    }
+}
+
+@media (max-width: 299px) {
+    .bootstrap .form-group .input-group input[type="text"], .bootstrap .form-group .input-group input[type="search"],
+    .bootstrap .form-group .input-group input[type="password"], .bootstrap .form-group .input-group textarea,
+    .bootstrap .form-group .input-group select  {
+        width: 90px;
+    }
+}
+
+
+@media (max-width: 299px) {
+    .bootstrap .form-control, .bootstrap input[type="text"],
+    .bootstrap input[type="search"],
+    .bootstrap input[type="password"], .bootstrap textarea, .bootstrap select input.biller-medium-input {
+        width: 150px;
+    }
+}
+
+@media (max-width: 610px) and (min-width: 300px) {
+    .bootstrap .form-control, .bootstrap input[type="text"],
+    .bootstrap input[type="search"],
+    .bootstrap input[type="password"], .bootstrap textarea, .bootstrap select input.biller-medium-input {
+        width: 200px;
+    }
+}
+

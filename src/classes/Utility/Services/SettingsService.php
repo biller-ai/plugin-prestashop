@@ -3,7 +3,6 @@
 namespace Biller\PrestaShop\Utility\Services;
 
 use Biller;
-use Biller\Domain\Order\Status;
 use Biller\Infrastructure\ServiceRegister;
 use Biller\PrestaShop\Utility\Config\BillerOrderStatusMapping;
 use Biller\PrestaShop\Utility\Config\BillerPaymentConfiguration;
@@ -14,12 +13,15 @@ use Context;
 use Tools;
 
 /**
- * SettingsService class.
+ * Class SettingsService
  *
- * @package Biller\PrestaShop\BusinessService
+ * @package Biller\PrestaShop\Utility\Services
  */
 class SettingsService
 {
+    /** @var string File name for translation contextualization */
+    const FILE_NAME = 'SettingsService';
+
     /** @var Biller */
     private $module;
 
@@ -32,18 +34,18 @@ class SettingsService
     }
 
     /**
-     * @return array
+     * @return array Array of errors
      */
     public function saveSettings()
     {
         $errors = array();
 
-        $name = Tools::getValue(Config::BILLER_NAME_KEY);
-        $description = Tools::getValue(Config::BILLER_DESCRIPTION_KEY);
+        $name = Tools::getValue(Config::NAME_KEY);
+        $description = Tools::getValue(Config::DESCRIPTION_KEY);
 
         if (!$name || !$description) {
             Context::getContext()->controller->errors[] =
-                $errors[] = $this->module->l('Name and description are required!');
+                $errors[] = $this->module->l('Name and description are required!', self::FILE_NAME);
 
             return $errors;
         }
@@ -58,24 +60,9 @@ class SettingsService
         $orderStatusMapping = ServiceRegister::getService(BillerOrderStatusMappingInterface::class);
         $orderStatusMap = array();
 
-        $orderStatusMap[Status::BILLER_STATUS_PENDING] =
-            Tools::getValue(Status::BILLER_STATUS_PENDING);
-        $orderStatusMap[Status::BILLER_STATUS_ACCEPTED] =
-            Tools::getValue(Status::BILLER_STATUS_ACCEPTED);
-        $orderStatusMap[Status::BILLER_STATUS_REFUNDED] =
-            Tools::getValue(Status::BILLER_STATUS_REFUNDED);
-        $orderStatusMap[Status::BILLER_STATUS_PARTIALLY_REFUNDED] =
-            Tools::getValue(Status::BILLER_STATUS_PARTIALLY_REFUNDED);
-        $orderStatusMap[Status::BILLER_STATUS_CAPTURED] =
-            Tools::getValue(Status::BILLER_STATUS_CAPTURED);
-        $orderStatusMap[Status::BILLER_STATUS_FAILED] =
-            Tools::getValue(Status::BILLER_STATUS_FAILED);
-        $orderStatusMap[Status::BILLER_STATUS_REJECTED] =
-            Tools::getValue(Status::BILLER_STATUS_REJECTED);
-        $orderStatusMap[Status::BILLER_STATUS_CANCELLED] =
-            Tools::getValue(Status::BILLER_STATUS_CANCELLED);
-        $orderStatusMap[Status::BILLER_STATUS_PARTIALLY_CAPTURED] =
-            Tools::getValue(Status::BILLER_STATUS_PARTIALLY_CAPTURED);
+        foreach ($orderStatusMapping->getDefaultOrderStatusMap() as $key => $value) {
+            $orderStatusMap[$key] = \Tools::getValue($key);
+        }
 
         $orderStatusMapping->saveOrderStatusMap($orderStatusMap);
 
@@ -89,7 +76,7 @@ class SettingsService
      */
     public function updateEnabledStatus()
     {
-        $enabled = Tools::getValue(Config::BILLER_ENABLE_BUSINESS_INVOICE_KEY);
+        $enabled = Tools::getValue(Config::ENABLE_BUSINESS_INVOICE_KEY);
 
         if ($enabled !== $this->module->isEnabledForShopContext()) {
             if ($enabled) {

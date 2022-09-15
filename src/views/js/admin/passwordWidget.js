@@ -1,5 +1,8 @@
 var Biller = Biller || {};
 
+/**
+ * Handles show/hide button for password input.
+ */
 (function () {
     Biller.passwordWidget = {
         init: function (wrapper) {

@@ -1,0 +1,131 @@
+.biller-notifications{
+    /*background: teal;*/
+    padding: 1em;
+    overflow-x: auto;
+    display: block;
+}
+
+.biller-notifications table{
+    width: 100%;
+    min-width: 1000px;
+}
+
+.biller-notifications table thead tr th{
+    padding-bottom: 0.5em;
+}
+
+.biller-notifications table thead tr{
+    border-bottom: 1px solid rgb(152, 207, 233);
+}
+
+.column-id{
+    width: 5%;
+    padding-left: 2em;
+}
+
+.column-date{
+    width: 15%;
+}
+
+.column-type{
+    width: 15%;
+}
+
+.column-order-number{
+    width: 15%;
+    max-width: 200px;
+    overflow-wrap: break-word;
+}
+
+.column-message{
+    width: 25%;
+}
+
+.column-details{
+    width: 25%;
+}
+
+.biller-notifications table tbody tr{
+
+}
+
+.biller-notifications table tbody tr td{
+    padding: 0.25em 0.5em 0.25em 0;
+    border-bottom: 1px solid rgb(215, 218, 220); /*rgb(235, 237, 239)*/
+    width: 300px;
+    height: auto;
+    overflow-wrap: break-word;
+}
+
+.biller-notifications table tbody tr td.column-message,
+.biller-notifications table tbody tr td.column-details{
+    max-width: 400px;
+    padding-right: 2em;
+}
+
+.biller-notifications table tbody tr td.column-id{
+    padding-left: 2em;
+}
+
+.column-type button{
+    cursor: none;
+    margin: 0;
+}
+
+.notification-type{
+    width: 80px;
+    background-color: white;
+    border-radius: 4px;
+    padding: 5px 10px;
+    text-align: center;
+    text-decoration: none;
+    display: inline-block;
+    font-size: 14px;
+    font-weight: bold;
+    cursor: default;
+}
+
+.notification-type-info{
+    border: 2px solid #00a0d2;
+    color: #00a0d2;
+}
+.notification-type-warning{
+    border: 2px solid #ffb900;
+    color: #ffb900;
+}
+.notification-type-error{
+    border: 2px solid #dc3232;
+    color: #dc3232;
+}
+
+#biller-spinner-div{
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    background: rgba(211, 211, 211, 0.8);
+    top: 0;
+    left: 0;
+    z-index: 10;
+}
+
+#biller-spinner{
+    position: absolute;
+    width: 50px;
+    height: 50px;
+    top: 50%;
+    left: 50%;
+    margin-top: -25px;
+    margin-left: -25px;
+    background-color: rgba(19, 133, 113, 0.5);
+    border: 3px solid transparent;
+    border-right-color: rgba(0, 39, 36, 0.5) ;
+    border-left-color: rgba(0, 39, 36, 0.5);
+    border-radius: 50%;
+    animation: rotate 1s linear 0s infinite;
+}
+
+@keyframes rotate {
+    100% {
+        transform: rotate(360deg);
+    }
+}

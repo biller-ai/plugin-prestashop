@@ -12,6 +12,7 @@ use PrestaShopLogger;
 
 /**
  * Class LoggerService
+ *
  * @package Biller\PrestaShop\InfrastructureService
  */
 class LoggerService extends Singleton implements ShopLoggerAdapter
@@ -23,18 +24,10 @@ class LoggerService extends Singleton implements ShopLoggerAdapter
     const PRESTASHOP_WARNING = 2;
     const PRESTASHOP_ERROR = 3;
 
-    /**
-     * Singleton instance of this class
-     *
-     * @var static
-     */
+    /** @var Singleton instance of this class */
     protected static $instance;
 
-    /**
-     * Log level names for corresponding log level codes
-     *
-     * @var array
-     */
+    /** @var string[] Log level names for corresponding log level codes */
     private static $logLevelName = array(
         Logger::ERROR => 'ERROR',
         Logger::WARNING => 'WARNING',
@@ -42,11 +35,7 @@ class LoggerService extends Singleton implements ShopLoggerAdapter
         Logger::DEBUG => 'DEBUG',
     );
 
-    /**
-     * Mappings of Biller log severity levels to Prestashop log severity levels
-     *
-     * @var array
-     */
+    /** @var int[] Mappings of Biller log severity levels to Prestashop log severity levels */
     private static $logMapping = array(
         Logger::ERROR => self::PRESTASHOP_ERROR,
         Logger::WARNING => self::PRESTASHOP_WARNING,
@@ -55,9 +44,9 @@ class LoggerService extends Singleton implements ShopLoggerAdapter
     );
 
     /**
-     * Log message in system
+     * Log message in system.
      *
-     * @param LogData $data
+     * @param LogData $data Data to be logged
      */
     public function logMessage(LogData $data)
     {

@@ -2,21 +2,42 @@
 
 namespace Biller\PrestaShop\Utility\Config;
 
-use Biller\PrestaShop\Repositories\ConfigurationRepository;
+use Biller\Infrastructure\Configuration\Configuration as ConfigurationInterface;
+use Biller\PrestaShop\InfrastructureService\ConfigurationService;
+use Biller\Infrastructure\ServiceRegister;
+use Module;
+use Biller;
 
 /**
- * BillerPaymentConfiguration class.
+ * Class BillerPaymentConfiguration. Implementation of BillerPaymentConfiguration interface.
  *
  * @package Biller\PrestaShop\Utility\Config
  */
 class BillerPaymentConfiguration implements Contract\BillerPaymentConfiguration
 {
+    /** @var string File name for translation contextualization */
+    const FILE_NAME = 'BillerPaymentConfiguration';
+
+    /** @var ConfigurationService */
+    private $configurationService;
+
+    /** @var Biller */
+    private $module;
+
+    public function __construct()
+    {
+        $this->module = Module::getInstanceByName('biller');
+    }
+
     /**
      * @inheritDoc
      */
     public function getName()
     {
-        return ConfigurationRepository::getValue(Config::BILLER_NAME_KEY);
+        return $this->getConfigurationService()->getConfigValue(
+            Config::NAME_KEY,
+            $this->module->l('Biller business invoice', self::FILE_NAME)
+        );
     }
 
     /**
@@ -24,7 +45,7 @@ class BillerPaymentConfiguration implements Contract\BillerPaymentConfiguration
      */
     public function setName($name)
     {
-        ConfigurationRepository::updateValue(Config::BILLER_NAME_KEY, $name);
+        $this->getConfigurationService()->saveConfigValue(Config::NAME_KEY, $name);
     }
 
     /**
@@ -32,8 +53,10 @@ class BillerPaymentConfiguration implements Contract\BillerPaymentConfiguration
      */
     public function getDescription()
     {
-
-        return ConfigurationRepository::getValue(Config::BILLER_DESCRIPTION_KEY);
+        return $this->getConfigurationService()->getConfigValue(
+            Config::DESCRIPTION_KEY,
+            $this->module->l('The payment solution that advances both sides. We pay out every invoice on time.', self::FILE_NAME)
+        );
     }
 
     /**
@@ -41,22 +64,20 @@ class BillerPaymentConfiguration implements Contract\BillerPaymentConfiguration
      */
     public function setDescription($description)
     {
-        ConfigurationRepository::updateValue(Config::BILLER_DESCRIPTION_KEY, $description);
+        $this->getConfigurationService()->saveConfigValue(Config::DESCRIPTION_KEY, $description);
     }
 
     /**
-     * @inheritDoc
+     * Gets configuration service instance.
+     *
+     * @return ConfigurationService
      */
-    public function getMethodEnabledStatus()
+    private function getConfigurationService()
     {
-        return ConfigurationRepository::getValue(Config::BILLER_ENABLE_BUSINESS_INVOICE_KEY);
-    }
+        if (!$this->configurationService) {
+            $this->configurationService = ServiceRegister::getService(ConfigurationInterface::CLASS_NAME);
+        }
 
-    /**
-     * @inheritDoc
-     */
-    public function setMethodEnabledStatus($enabled)
-    {
-        ConfigurationRepository::updateValue(Config::BILLER_ENABLE_BUSINESS_INVOICE_KEY, $enabled);
+        return $this->configurationService;
     }
 }

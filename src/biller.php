@@ -1,8 +1,5 @@
 <?php
 
-
-use Biller\PrestaShop\Utility\Config\BillerPaymentConfiguration;
-
 if (!defined('_PS_VERSION_')) {
     exit;
 }
@@ -10,12 +7,26 @@ if (!defined('_PS_VERSION_')) {
 require_once rtrim(_PS_MODULE_DIR_, '/') . '/biller/vendor/autoload.php';
 
 /**
- * Biller class.
+ * Biller module base class. This class represents main entry point for the plugin.
+ * It is used for: installation, uninstallation, handling hook actions and handling configuration page.
+ *
+ * @property bool bootstrap
+ * @property string module_key
+ * @property string name
+ * @property string tab
+ * @property string version
+ * @property string author
+ * @property int need_instance
+ * @property array ps_versions_compliancy
+ * @property string displayName
+ * @property string description
+ * @property string confirmUninstall
+ * @property \Context context
  */
 class Biller extends PaymentModule
 {
     /**
-     * Biller module constructor.
+     * Biller module constructor
      */
     public function __construct()
     {
@@ -31,44 +42,40 @@ class Biller extends PaymentModule
         parent::__construct();
 
         $this->displayName = $this->l('Biller business invoice');
-        $this->description = $this->l(
-            'The payment solution that advances both sides. We pay out every invoice on time.'
-        );
+        $this->description = $this->l('The payment solution that advances both sides. We pay out every invoice on time.');
         $this->confirmUninstall = $this->l('Are you sure you want to uninstall the biller module?');
     }
 
     /**
-     * Handle plugin installation
+     * Handle plugin installation.
      *
-     * @return bool
+     * @return bool Installation status
      */
     public function install()
     {
-        $installer = new Biller\PrestaShop\Utility\Installer($this);
-
         return (
             parent::install() &&
-            $installer->install()
+            $this->getInstaller()->install()
         );
     }
 
     /**
-     * Handle plugin uninstallation
+     * Handle plugin uninstallation.
      *
-     * @return bool
+     * @return bool Uninstallation status
      */
     public function uninstall()
     {
-        $installer = new Biller\PrestaShop\Utility\Installer($this);
-
-        return (parent::uninstall() &&
-            $installer->uninstall());
+        return (
+            parent::uninstall() &&
+            $this->getInstaller()->uninstall()
+        );
     }
 
     /**
      * Gets module's context.
      *
-     * @return Context|null
+     * @return \Context|null Module's context
      */
     public function getContext()
     {
@@ -78,7 +85,7 @@ class Biller extends PaymentModule
     /**
      * Gets module's smarty reference.
      *
-     * @return Smarty_Data|Smarty_Internal_TemplateBase
+     * @return Smarty_Data|Smarty_Internal_TemplateBase Module's smarty reference
      */
     public function getSmarty()
     {
@@ -88,7 +95,7 @@ class Biller extends PaymentModule
     /**
      * Gets module's identifier.
      *
-     * @return string
+     * @return string Module's string identifier
      */
     public function getIdentifier()
     {
@@ -98,7 +105,7 @@ class Biller extends PaymentModule
     /**
      * Gets module's table.
      *
-     * @return string
+     * @return string Module's table
      */
     public function getTable()
     {
@@ -109,21 +116,21 @@ class Biller extends PaymentModule
      * This method handles the module's configuration page.
      * Display configuration page only if the shop context is selected.
      *
-     * @return void|string The page's HTML content.
+     * @return void|string The page's HTML content
      */
     public function getContent()
     {
         $isShopContext = \Shop::getContext() === \Shop::CONTEXT_SHOP;
 
         if (!$isShopContext) {
-            $this->context->controller->errors[] = $this->l('Please select the specific shop to configure.');
+            $this->getContext()->controller->errors[] = $this->l('Please select the specific shop to configure.');
 
             return;
         }
 
         Biller\PrestaShop\Bootstrap::init();
 
-        $authorizationService = new \Biller\PrestaShop\Utility\Services\AuthorizationService($this);
+        $authorizationService = new \Biller\PrestaShop\Utility\Services\AuthorizationService();
         $settingsService = new \Biller\PrestaShop\Utility\Services\SettingsService($this);
 
         $loggedIn = $authorizationService->loggedIn();
@@ -138,7 +145,7 @@ class Biller extends PaymentModule
             }
 
             if (!empty($errors)) {
-                $this->context->controller->errors = $errors;
+                $this->getContext()->controller->errors = $errors;
             } else {
                 Context::getContext()->controller->confirmations = $this->l('Your settings have been saved.');
             }
@@ -160,14 +167,46 @@ class Biller extends PaymentModule
      * @param string $action Method name
      * @param array $params URL parameters
      *
-     * @return string
+     * @return string Action link
+     *
+     * @throws \PrestaShopException
      */
     public function getAction($controller, $action, array $params)
     {
         $query = array_merge(array('action' => $action), $params);
 
-        return $this->context->link->getAdminLink($controller) .
+        return $this->getContext()->link->getAdminLink($controller) .
             '&' . http_build_query($query);
+    }
+
+    /**
+     * Hook for handling partial refund through Return products option.
+     *
+     * @param array $params Array containing order, cart and product list of partial refund
+     *
+     * @return void
+     */
+    public function hookActionOrderSlipAdd($params)
+    {
+        if ($params['order']->module === $this->name) {
+            \Biller\PrestaShop\Bootstrap::init();
+            try {
+                \Biller\PrestaShop\Utility\OrderStatusHandler::handlePartialRefund(
+                    $params['cart'],
+                    $params['productList'],
+                    $params['order'],
+                    !empty($params['qtyList']) ? $params['qtyList'] : array(),
+                    !empty($params['qtyList']) ? true : null
+                );
+            } catch (Exception $exception) {
+                Biller\PrestaShop\Utility\FlashBag::getInstance()->setMessage(
+                    'error',
+                    $this->l($exception->getMessage())
+                );
+
+                Tools::redirectAdmin($this->getRedirectionHandler()->generateOrderPageUrl($params['order']));
+            }
+        }
     }
 
     /**
@@ -177,49 +216,234 @@ class Biller extends PaymentModule
      */
     public function hookDisplayHeader()
     {
-        $this->context->controller->addJS(array($this->getPathUri() . 'views/js/front/checkout.js'));
+        \Biller\PrestaShop\Bootstrap::init();
+
+        $this->getContext()->controller->addJS($this->getPathUri() . $this->getTemplateAndJsVersion()->getCheckoutJS());
+    }
+
+    /**
+     * Used for partial refund for PrestaShop 1.6.
+     * PrestaShop 1.6 does not have specific hook for handling partial refund.
+     *
+     * @param array $params Array cart of order
+     *
+     * @return void
+     *
+     * @throws \PrestaShopDatabaseException
+     * @throws \PrestaShopException
+     */
+    public function hookActionDispatcher($params)
+    {
+        \Biller\PrestaShop\Bootstrap::init();
+        if (
+            Tools::getIsset('partialRefundProduct') &&
+            (count(array_filter(Tools::getValue('partialRefundProduct'))) ||
+                Tools::getValue(
+                    'partialRefundShippingCost'
+                )) &&
+            (new \Order(Tools::getValue('id_order')))->module === $this->name
+        ) {
+            try {
+                \Biller\PrestaShop\Utility\OrderStatusHandler::handlePartialRefund(
+                    $params['cart'],
+                    array_filter(Tools::getValue('partialRefundProduct')),
+                    new \Order(Tools::getValue('id_order')),
+                    array_filter(Tools::getValue('partialRefundProductQuantity')),
+                    false
+                );
+            } catch (\Exception $exception) {
+                Biller\PrestaShop\Utility\FlashBag::getInstance()->setMessage(
+                    'error',
+                    $this->l($exception->getMessage())
+                );
+
+                Tools::redirectAdmin(
+                    $this->getRedirectionHandler()->generateOrderPageUrl((new \Order(Tools::getValue('id_order'))))
+                );
+            }
+        }
+    }
+
+    /**
+     * Hook for displaying messages on checkout for PrestaShop 1.6.
+     *
+     * @return string Template to be displayed
+     */
+    public function hookDisplayPaymentTop()
+    {
+        $message = $this->l(
+            \Biller\PrestaShop\Utility\FlashBag::getInstance()->getMessage('error')
+        );
+        \Context::getContext()->smarty->assign(array('message' => $message));
+
+        return $message ? $this->display(__FILE__, 'payment_top16.tpl') : '';
     }
 
 
     /**
+     * Hook for displaying tab link on order page.
+     *
+     * @param array $params Hook parameters containing Id of the order.
+     *
+     * @return string Tab link HTML as string
+     *
      * @throws \PrestaShopDatabaseException
      * @throws \PrestaShopException
-     * @throws \Biller\Infrastructure\ORM\Exceptions\QueryFilterInvalidParamException
-     * @throws \Biller\Infrastructure\ORM\Exceptions\RepositoryNotRegisteredException
+     *
+     * @since 1.7.7
      */
-    public function hookDisplayAdminOrderTabContent($params)
+    public function hookDisplayAdminOrderTabLink($params)
     {
-        $order = new Order($params['id_order']);
+        return $this->displayTabLink($params['id_order']);
+    }
 
-        if ($order->payment === $this->displayName) {
-            \Biller\PrestaShop\Bootstrap::init();
+    /**
+     * Hook for displaying tab link on order page
+     * Removed in 1.7.7 in favor of displayAdminOrderTabLink.
+     *
+     * @param array $params Hook parameters containing ID of the order
+     *
+     * @return string Tab link HTML as string
+     *
+     * @throws \PrestaShopDatabaseException
+     * @throws \PrestaShopException
+     */
+    public function hookDisplayAdminOrderTabOrder($params)
+    {
+        return $this->displayTabLink($params['order']->id);
+    }
 
-            $externalOrderUUID = $this->getExternalOrderUUID($order->id_cart);
+    /**
+     * Hook for displaying header data used in BO.
+     *
+     * @return false|string Header HTML data as string
+     * @throws \PrestaShopException
+     */
+    public function hookDisplayBackOfficeHeader()
+    {
+        $currentController = Tools::getValue('controller');
 
-            /** @var  Biller\BusinessLogic\Order\OrderService $orderService */
-            $orderService = Biller\Infrastructure\ServiceRegister::getService(Biller\BusinessLogic\Order\OrderService::class);
+        if (
+            $message = $this->l(
+                \Biller\PrestaShop\Utility\FlashBag::getInstance()->getMessage('error')
+            )
+        ) {
+            $this->getContext()->controller->errors[] = Tools::displayError($message);
+        }
 
-            try {
-                $this->context->smarty->assign(array('status' => $this->getStatusLabel($orderService->getStatus($externalOrderUUID))));
-            } catch (Exception $e) {
-            }
+        if (
+            $message = $this->l(
+                \Biller\PrestaShop\Utility\FlashBag::getInstance()->getMessage('success')
+            )
+        ) {
+            $this->getContext()->controller->confirmations[] = $message;
+        }
 
-            Tools::clearAllCache();
-            return $this->display(__FILE__, 'order_biller_section.tpl');
+        if ($currentController === 'AdminOrders') {
+            $this->smarty->assign(array(
+                'companyInfoURL' => $this->getAction('CompanyInfo', 'fetchCompanyInfo', array('ajax' => true)),
+                'orderCreateAction' => $this->getAction(
+                    'CreateOrder',
+                    'createOrder',
+                    array(
+                        'ajax' => true
+                    )
+                )
+            ));
+
+            return $this->display($this->getPathUri(), $this->getTemplateAndJsVersion()->getAddOrderSummaryTemplate());
         }
 
         return '';
     }
 
+    /**
+     * Hook for displaying tab content on order page.
+     *
+     * @param array $params Hook parameters
+     *
+     * @return string
+     *
+     * @throws \PrestaShopDatabaseException
+     * @throws \PrestaShopException
+     * @throws \Biller\BusinessLogic\API\Http\Exceptions\RequestNotSuccessfulException
+     * @throws \Biller\BusinessLogic\Order\Exceptions\InvalidOrderReferenceException
+     * @throws \Biller\Infrastructure\Http\Exceptions\HttpCommunicationException
+     * @throws \Biller\Infrastructure\Http\Exceptions\HttpRequestException
+     * @throws \Biller\Infrastructure\ORM\Exceptions\QueryFilterInvalidParamException
+     * @throws \Biller\Infrastructure\ORM\Exceptions\RepositoryNotRegisteredException
+     *
+     * @since 1.7.7
+     */
+    public function hookDisplayAdminOrderTabContent($params)
+    {
+        return $this->displayTabContent($params['id_order']);
+    }
+
+    /**
+     * Hook for displaying tab content on order page
+     * Removed in 1.7.7 in favor of displayAdminOrderTabContent
+     *
+     * @param array $params Hook parameters
+     *
+     * @return string Tab content HTML as string
+     *
+     * @throws \PrestaShopDatabaseException
+     * @throws \PrestaShopException
+     * @throws \Biller\BusinessLogic\API\Http\Exceptions\RequestNotSuccessfulException
+     * @throws \Biller\BusinessLogic\Order\Exceptions\InvalidOrderReferenceException
+     * @throws \Biller\Infrastructure\Http\Exceptions\HttpCommunicationException
+     * @throws \Biller\Infrastructure\Http\Exceptions\HttpRequestException
+     * @throws \Biller\Infrastructure\ORM\Exceptions\QueryFilterInvalidParamException
+     * @throws \Biller\Infrastructure\ORM\Exceptions\RepositoryNotRegisteredException
+     */
+    public function hookDisplayAdminOrderContentOrder($params)
+    {
+        return $this->displayTabContent($params['order']->id);
+    }
+
+    /**
+     * Hook called after a Biller order has been validated. Used to save order's company info into database.
+     *
+     * @param $params Array containing cart and order objects
+     *
+     * @return void
+     */
+    public function hookActionValidateOrder($params)
+    {
+        if (
+            !isset($this->getContext()->controller) ||
+            'admin' !== $this->getContext()->controller->controller_type ||
+            $params['order']->module !== $this->name
+        ) {
+            return;
+        }
+
+        \Biller\PrestaShop\Bootstrap::init();
+
+        /** @var \Biller\PrestaShop\Utility\Services\CompanyInfoService $companyInfoService */
+        $companyInfoService = \Biller\Infrastructure\ServiceRegister::getService(
+            \Biller\PrestaShop\Utility\Services\CompanyInfoService::class
+        );
+
+        $companyInfo = new Biller\PrestaShop\Entity\CompanyInfo();
+
+        $companyInfo->setOrderId($params['cart']->id);
+        $companyInfo->setCompanyName(\Tools::getValue('biller-company-name'));
+        $companyInfo->setRegistrationNumber(\Tools::getValue('biller-registration-number'));
+        $companyInfo->setVatNumber(\Tools::getValue('biller-vat-number'));
+
+        $companyInfoService->saveCompanyInfo($companyInfo);
+    }
 
     /**
      * Hook for adding Biller payment option if availability condition is satisfied.
      *
      * @param array $params Array containing cookie and cart objects
      *
-     * @return array
+     * @return array Array containing the Biller payment method
      */
-    public function hookPaymentOptions(array $params)
+    public function hookPaymentOptions($params)
     {
         \Biller\PrestaShop\Bootstrap::init();
 
@@ -233,18 +457,332 @@ class Biller extends PaymentModule
         return array();
     }
 
+    /**
+     * Hook for adding Biller as a payment option on PrestaShop 1.6.
+     *
+     * @param array $params Hook parameters
+     *
+     * @return false|string Biller payment option link HTML as string
+     */
+    public function hookPayment($params)
+    {
+        \Biller\PrestaShop\Bootstrap::init();
+
+        $billingCountryId = $this->extractBillingCountryId($params);
+        $currencyId = $this->extractCurrencyId($params);
+
+        if ($this->isPaymentMethodAvailable($billingCountryId, $currencyId)) {
+            $idAddress = Context::getContext()->cart->id_address_invoice;
+            $address = new Address($idAddress);
+            $this->smarty->assign(array(
+                'biller_name' => $this->l($this->getPaymentConfiguration()->getName()),
+                'biller_description' => $this->l($this->getPaymentConfiguration()->getDescription()),
+                'biller_company_name' => $address->company,
+                'biller_vat_number' => $address->vat_number,
+                'action' => $this->getContext()->link->getModuleLink($this->name, 'payment', array(), true),
+            ));
+
+            return $this->display(__FILE__, 'payment.tpl');
+        }
+
+        return '';
+    }
 
     /**
-     * Add JS && CSS to admin controllers.
+     * Hook for displaying content on order confirmation page on PrestaShop 1.6
+     *
+     * @return false|string Template to be displayed
+     */
+    public function hookPaymentReturn()
+    {
+        $template = $this->getTemplateAndJsVersion()->getPaymentReturnTemplate();
+
+        return $template ? $this->display(__FILE__, $template) : '';
+    }
+
+    /**
+     * Hook called on order edit.
+     *
+     * @param $params Array containing edited order object
+     *
+     * @return void
+     */
+    public function hookActionOrderEdited($params)
+    {
+        /** @var \Order $order */
+        $order = $params['order'];
+
+        if ($this->getContext()->controller->controller_type !== 'admin' || $order->module !== $this->name) {
+            return;
+        }
+
+        \Biller\PrestaShop\Bootstrap::init();
+
+        $orderPending = $order->current_state ==
+            $this->getOrderStatusMapper()->getOrderStatusMap()[\Biller\Domain\Order\Status::BILLER_STATUS_PENDING];
+        if (!$orderPending) {
+            $this->getNotificationHub()->pushWarning(
+                new Biller\BusinessLogic\Notifications\NotificationText(
+                    'biller.payment.order.synchronization.warning.title'
+                ),
+                new Biller\BusinessLogic\Notifications\NotificationText(
+                    'biller.payment.order.synchronization.warning.description'
+                ),
+                $order->id
+            );
+        }
+    }
+
+    /**
+     * Hook called before address update.
+     *
+     * @param array $params Hook parameters array containing the updated address
+     *
+     * @return void
+     *
+     * @throws PrestaShopDatabaseException
+     * @throws PrestaShopException
+     */
+    public function hookActionObjectAddressAddBefore($params)
+    {
+        if ($this->getContext()->controller->controller_type !== 'admin') {
+            return;
+        }
+
+        \Biller\PrestaShop\Bootstrap::init();
+
+        /** @var \Address $address */
+        $address = $params['object'];
+        $customer = new \Customer($address->id_customer);
+        $carts = \Cart::getCustomerCarts($customer->id);
+
+        foreach ($carts as $cart) {
+            $order = new \Order(\Order::getOrderByCartId($cart['id_cart']));
+
+            if (!$order) {
+                continue;
+            }
+
+            $orderPending = $order->current_state ==
+                $this->getOrderStatusMapper()->getOrderStatusMap()[\Biller\Domain\Order\Status::BILLER_STATUS_PENDING];
+            if ($order->module === $this->name && !$orderPending) {
+                $this->getNotificationHub()->pushWarning(
+                    new Biller\BusinessLogic\Notifications\NotificationText(
+                        'biller.payment.address.synchronization.warning.title'
+                    ),
+                    new Biller\BusinessLogic\Notifications\NotificationText(
+                        'biller.payment.address.synchronization.warning.description',
+                        array($address->id, $order->id)
+                    ),
+                    $order->id
+                );
+            }
+        }
+    }
+
+    /**
+     * Hook for adding JS && CSS to admin controllers.
      */
     public function hookActionAdminControllerSetMedia()
     {
+        \Biller\PrestaShop\Bootstrap::init();
+
         $currentController = Tools::getValue('controller');
         $moduleName = Tools::getValue('configure');
 
-        // on the module configuration page
-        if ($moduleName === $this->name && $currentController === 'AdminModules') {
-            $this->context->controller->addJS($this->getPathUri() . 'views/js/admin/moduleConfigure.js');
+        $this->getContext()->controller->addCSS(array(
+            $this->getPathUri() . 'views/css/admin/orderDashboard.css',
+            $this->getPathUri() . 'views/css/admin/app.css'
+        ));
+        $this->getContext()->controller->addJS(array(
+            $this->getPathUri() . 'views/js/admin/orderDashboard.js',
+            $this->getPathUri() . 'views/js/admin/orderTabContent.js',
+            $this->getPathUri() . 'views/js/admin/ajax.js',
+            $this->getPathUri() . $this->getTemplateAndJsVersion()->getAddOrderSummaryJS()
+        ));
+
+        if ($moduleName === $this->displayName && $currentController === 'AdminModules') {
+            $this->getContext()->controller->addJS($this->getPathUri() . 'views/js/admin/moduleConfigure.js');
+        }
+
+        if ($currentController === 'AdminOrders') {
+            /** @var \Biller\PrestaShop\Utility\Services\AuthorizationService $authorizationService */
+            $authorizationService = \Biller\Infrastructure\ServiceRegister::getService(
+                \Biller\PrestaShop\Utility\Services\AuthorizationService::class
+            );
+
+            \Media::addJsDef(array(
+                'billerPendingStatus' => $this->getOrderStatusMapper()->getOrderStatusMap(
+                )[\Biller\Domain\Order\Status::BILLER_STATUS_PENDING],
+                'billerAvailable' => $authorizationService->loggedIn(),
+            ));
+        }
+    }
+
+    /**
+     * Hook for handling order status update.
+     *
+     * @param array $params Hook parameters
+     *
+     * @return void
+     *
+     * @throws \PrestaShopException
+     * @throws \Exception
+     */
+    public function hookActionOrderStatusUpdate($params)
+    {
+        $order = new Order($params['id_order']);
+        $orderStatus = $params['newOrderStatus'];
+
+        if (
+            $order->module !== $this->name ||
+            \Tools::getValue('controller') === 'webhooks' ||
+            $orderStatus->id == $order->current_state
+        ) {
+            return;
+        }
+
+        \Biller\PrestaShop\Bootstrap::init();
+
+        $status = \Biller\PrestaShop\Utility\OrderStatusHandler::getBillerOrderStatus($order);
+        $orderStatusMapping = $this->getOrderStatusMapper();
+
+        if (
+            $orderStatusMapping->getOrderStatusMap()
+            [$status->__toString()] == $orderStatus->id
+        ) {
+            return;
+        }
+
+        if (
+            $orderStatusMapping->getOrderStatusMap()
+            [\Biller\Domain\Order\Status::BILLER_STATUS_REFUNDED] == $orderStatus->id
+        ) {
+            \Biller\PrestaShop\Utility\OrderStatusHandler::handleFullRefund($order);
+        }
+
+        if (
+            $orderStatusMapping->getOrderStatusMap()
+            [\Biller\Domain\Order\Status::BILLER_STATUS_CANCELLED] == $orderStatus->id
+        ) {
+            \Biller\PrestaShop\Utility\OrderStatusHandler::handleCancellation($order);
+        }
+
+        if (
+            $orderStatusMapping->getOrderStatusMap()
+            [\Biller\Domain\Order\Status::BILLER_STATUS_CAPTURED] == $orderStatus->id
+        ) {
+            \Biller\PrestaShop\Utility\OrderStatusHandler::handleCapture($order);
+        }
+
+        if (
+            $orderStatusMapping->getOrderStatusMap()
+            [\Biller\Domain\Order\Status::BILLER_STATUS_ACCEPTED] == $orderStatus->id &&
+            ($orderStatusMapping->getOrderStatusMap()
+                [\Biller\Domain\Order\Status::BILLER_STATUS_CANCELLED] == $order->current_state ||
+                $orderStatusMapping->getOrderStatusMap(
+                )[\Biller\Domain\Order\Status::BILLER_STATUS_REFUNDED] == $order->current_state)
+        ) {
+            \Biller\PrestaShop\Utility\OrderStatusHandler::handleProcessingStatus($order);
+        }
+    }
+
+    /**
+     * Hook called after shop object deletion. Used to adjust Biller configuration data on store deletion when
+     * multistore is feature enabled.
+     *
+     * @param $params Array of hook parameters containing the shop object under 'object' key
+     *
+     * @return void
+     */
+    public function hookActionObjectShopDeleteAfter($params)
+    {
+        /** @var \Shop $shop */
+        $shop = $params['object'];
+
+        \Biller\PrestaShop\Utility\DatabaseHandler::deleteRows(
+            'configuration',
+            "name LIKE '%BILLER%' && id_shop = $shop->id"
+        );
+
+        $remainingShops = \Shop::getShops(false);
+
+        if (count($remainingShops) === 2) {
+            $defaultShop = $remainingShops[\Configuration::get('PS_SHOP_DEFAULT')];
+
+            $idShop = $defaultShop['id_shop'];
+            $idShopGroup = $defaultShop['id_shop_group'];
+
+            \Biller\PrestaShop\Utility\DatabaseHandler::updateRows(
+                'configuration',
+                array(
+                    'id_shop' => array('type' => 'sql', 'value' => 'NULL'),
+                    'id_shop_group' => array('type' => 'sql', 'value' => 'NULL'),
+                ),
+                "name LIKE 'BILLER%' AND id_shop = $idShop AND id_shop_group = $idShopGroup"
+            );
+        }
+    }
+
+    /**
+     * Hook called before shop object addition. Used to adjust Biller configuration data on store addition when
+     * multistore is feature enabled.
+     *
+     * @param $params Array of hook parameters containing the shop object under 'object' key
+     *
+     * @return void
+     */
+    public function hookActionObjectShopAddBefore($params)
+    {
+        $shops = \Shop::getShops(false);
+
+        if (count($shops) === 1) {
+            $defaultShop = $shops[\Configuration::get('PS_SHOP_DEFAULT')];
+
+            $idShop = $defaultShop['id_shop'];
+            $idShopGroup = $defaultShop['id_shop_group'];
+
+            \Biller\PrestaShop\Utility\DatabaseHandler::updateRows(
+                'configuration',
+                array(
+                    'id_shop' => $idShop,
+                    'id_shop_group' => $idShopGroup,
+                ),
+                "name LIKE 'BILLER%'"
+            );
+        }
+    }
+
+    /**
+     * Hook for altering email template variables before sending.
+     *
+     * @param array $params Array of parameters including template_vars array and cart
+     *
+     * @return void
+     *
+     * @throws \PrestaShopDatabaseException
+     * @throws \PrestaShopException
+     */
+    public function hookSendMailAlterTemplateVars(array &$params)
+    {
+        if (isset($params['template_vars']['{biller_payment_link}'])) {
+            return;
+        }
+
+        if (empty($params['cart']->id)) {
+            $params['template_vars']['{biller_payment_link}'] = '';
+
+            return;
+        }
+
+        $order = new \Order(\Order::getOrderByCartId($params['cart']->id));
+
+        if ($order->module === $this->name) {
+            $params['template_vars']['{biller_payment_link}'] = \Context::getContext()->link->getModuleLink(
+                $this->name,
+                'payment',
+                array('orderId' => $order->id, 'ajax' => true)
+            );
         }
     }
 
@@ -255,10 +793,15 @@ class Biller extends PaymentModule
      */
     private function addConfigStylesAndJS()
     {
-        $this->context->controller->addCSS($this->getPathUri() . 'views/css/admin/config.css');
-        $this->context->controller->addJS(array(
+        $this->getContext()->controller->addCSS(array(
+            $this->getPathUri() . 'views/css/admin/config.css',
+            $this->getPathUri() . 'views/css/admin/notifications.css',
+        ));
+        $this->getContext()->controller->addJS(array(
             $this->getPathUri() . 'views/js/admin/form.js',
-            $this->getPathUri() . 'views/js/admin/passwordWidget.js'
+            $this->getPathUri() . 'views/js/admin/ajax.js',
+            $this->getPathUri() . 'views/js/admin/notifications.js',
+            $this->getPathUri() . 'views/js/admin/passwordWidget.js',
         ));
     }
 
@@ -266,7 +809,8 @@ class Biller extends PaymentModule
      * Generates appropriate configuration page form for the given logged in status.
      *
      * @param bool $loggedIn Logged in flag
-     * @param bool $formSubmitted Bool indicating whether form is being generated for the first time or after post request
+     * @param bool $formSubmitted Bool indicating whether form is being generated for the
+     * first time or after post request
      *
      * @return string Configuration page HTML
      */
@@ -282,11 +826,11 @@ class Biller extends PaymentModule
     /**
      * Extracts billing country from hook parameters containing cart data.
      *
-     * @param array $params Hook parameters.
+     * @param array $params Hook parameters
      *
-     * @return int Billing country id.
+     * @return int Billing country id
      */
-    private function extractBillingCountryId(array $params)
+    private function extractBillingCountryId($params)
     {
         return \Address::getCountryAndState((int)$params['cart']->id_address_invoice)['id_country'];
     }
@@ -294,11 +838,11 @@ class Biller extends PaymentModule
     /**
      * Extracts currency from hook parameters containing cookie data.
      *
-     * @param array $params Hook parameters.
+     * @param array $params Hook parameters
      *
-     * @return int Currency id.
+     * @return int Currency id
      */
-    private function extractCurrencyId(array $params)
+    private function extractCurrencyId($params)
     {
         return (int)$params['cookie']->__get('id_currency');
     }
@@ -306,14 +850,21 @@ class Biller extends PaymentModule
     /**
      * Checks if Biller payment option is available for given billing country and currency.
      *
-     * @param int $billingCountryId Id of billing country.
-     * @param int $currencyId Id of currency.
+     * @param int $billingCountryId ID of billing country
+     * @param int $currencyId ID of currency
      *
-     * @return bool True if payment option available, otherwise false.
+     * @return bool True if payment option available, otherwise false
      */
     private function isPaymentMethodAvailable($billingCountryId, $currencyId)
     {
-        return $this->isMethodEnabled()
+        /** @var \Biller\PrestaShop\Utility\Services\AuthorizationService $authorizationService */
+        $authorizationService = \Biller\Infrastructure\ServiceRegister::getService(
+            \Biller\PrestaShop\Utility\Services\AuthorizationService::class
+        );
+
+        return
+            $authorizationService->loggedIn()
+            && $this->isMethodEnabled()
             && $this->isValidCountry($billingCountryId)
             && $this->isValidCurrency($currencyId);
     }
@@ -321,22 +872,19 @@ class Biller extends PaymentModule
     /**
      * Checks if Biller business invoice payment method is enabled.
      *
-     * @return bool
+     * @return bool Method enabled status
      */
     private function isMethodEnabled()
     {
-        /** @var BillerPaymentConfiguration $paymentConfiguration */
-        $paymentConfiguration = Biller\Infrastructure\ServiceRegister::getService(Biller\PrestaShop\Utility\Config\Contract\BillerPaymentConfiguration ::class);
-
-        return $this->isEnabledForShopContext() && intval($paymentConfiguration->getMethodEnabledStatus());
+        return $this->isEnabledForShopContext();
     }
 
     /**
      * Checks if country is supported by Biller.
      *
-     * @param int $billingCountryId
+     * @param int $billingCountryId Country id of the billing address
      *
-     * @return bool
+     * @return bool Validity status
      */
     private function isValidCountry($billingCountryId)
     {
@@ -348,28 +896,33 @@ class Biller extends PaymentModule
     /**
      * Checks if currency is supported by Biller.
      *
-     * @param int $currencyId
+     * @param int $currencyId Currency id
      *
-     * @return bool
+     * @return bool Validity status
      */
     private function isValidCurrency($currencyId)
     {
-        $currencyIsoCode = \Currency::getIsoCodeById($currencyId);
+        $currencyIsoCode = (new Currency($currencyId))->iso_code;
 
-        return in_array($currencyIsoCode, \Biller\PrestaShop\Utility\Config\Config::ACCEPTED_CURENCY_CODES);
+        return in_array($currencyIsoCode, Biller\PrestaShop\Utility\Config\Config::ACCEPTED_CURENCY_CODES);
     }
 
     /**
      * Creates Biller payment option.
      *
-     * @return PrestaShop\PrestaShop\Core\Payment\PaymentOption Biller payment option object.
+     * @return PrestaShop\PrestaShop\Core\Payment\PaymentOption Biller payment option object
      */
     private function createPaymentOption()
     {
         $paymentOption = new PrestaShop\PrestaShop\Core\Payment\PaymentOption();
 
-        $paymentOption->setCallToActionText($this->l('Biller business invoice'));
-        $paymentOption->setForm($this->generatePaymentMethodForm());
+        /** @var Biller\PrestaShop\Utility\Config\BillerPaymentConfiguration $paymentConfiguration */
+        $paymentConfiguration = Biller\Infrastructure\ServiceRegister::getService(
+            Biller\PrestaShop\Utility\Config\Contract\BillerPaymentConfiguration::class
+        );
+
+        $paymentOption->setCallToActionText($this->l($paymentConfiguration->getName()));
+        $paymentOption->setForm($this->generatePaymentMethodForm($paymentConfiguration->getDescription()));
         $paymentOption->setLogo($this->getPathUri() . 'views/img/biller_logo_wide.png');
         $paymentOption->setModuleName($this->name);
         $paymentOption->setInputs(array());
@@ -381,92 +934,208 @@ class Biller extends PaymentModule
     /**
      * Generates Biller payment method form.
      *
-     * @return string Biller payment method form HTML.
+     * @param string $moduleDescription Module description
+     *
+     * @return string Biller payment method form HTML
      */
-    private function generatePaymentMethodForm()
+    private function generatePaymentMethodForm($moduleDescription)
     {
         try {
             $idAddress = Context::getContext()->cart->id_address_invoice;
             $address = new Address($idAddress);
-            $this->context->smarty->assign(array(
-                'description' => $this->l(
-                    'The payment solution that advances both sides. We pay out every invoice on time.'
-                ),
-                'action' => $this->context->link->getModuleLink($this->name, 'payment', array(), true), // TODO not needed in case of 'PLACE ORDER' submission
+            $this->getContext()->smarty->assign(array(
+                'description' => $this->l($moduleDescription),
+                'action' => $this->getContext()->link->getModuleLink($this->name, 'payment', array(), true),
                 'companyName' => $address->company,
                 'VAT' => $address->vat_number
             ));
 
-            return $this->context->smarty->fetch($this->getTemplatePath('paymentForm.tpl'));
-        } catch (\Exception $e) {
+            return $this->getContext()->smarty->fetch($this->getTemplatePath('payment_form.tpl'));
+        } catch (\Exception $exception) {
+            Biller\Infrastructure\Logger\Logger::logError($exception->getMessage());
+
             return '';
         }
     }
 
     /**
-     * @return void
-     */
-    private function assignSmarty()
-    {
-        $this->smarty->assign(array('logo' => $this->getPathUri() . 'views/img/biller_logo.svg',
-            'version' => $this->version
-        ));
-    }
-
-
-    /**
-     * Get status label
+     * Display Biller tab link on order page.
      *
-     * @param Biller\Domain\Order\Status $status
+     * @param int $orderId Order id
      *
-     * @return string
+     * @return string Tab link HTML as a string
+     *
+     * @throws \PrestaShopDatabaseException
+     * @throws \PrestaShopException
      */
-    private function getStatusLabel( $status)
+    private function displayTabLink($orderId)
     {
-        switch ($status) {
-            case $status->isPending():
-                return 'Pending';
-            case $status->isAccepted():
-                return 'Accepted';
-            case $status->isCaptured():
-                return 'Captured';
-            case $status->isPartiallyCaptured():
-                return 'Partially captured';
-            case $status->isRefunded():
-                return 'Refunded';
-            case $status->isRefundedPartially():
-                return 'Partially refunded';
-            case $status->isCancelled():
-                return 'Cancelled';
-            case $status->isRejected():
-                return 'Rejected';
-            case $status->isFailed():
-                return 'Failed';
-            default:
-                return 'Unknown';
+        $order = new Order($orderId);
+
+        if (\Shop::getContext() !== \Shop::CONTEXT_SHOP || $order->module !== $this->name) {
+            return '';
         }
+
+        \Biller\PrestaShop\Bootstrap::init();
+
+        $this->getContext()->smarty->assign(
+            array('biller_name' => $this->l($this->getPaymentConfiguration()->getName()))
+        );
+
+        return $this->display(__FILE__, $this->getTemplateAndJsVersion()->getTabLinkTemplate());
     }
 
     /**
-     * Returns external order uid
+     * Display Biller tab content on order page.
      *
-     * @param int $idCart
-     * @return string
-     * @throws \Biller\Infrastructure\ORM\Exceptions\RepositoryNotRegisteredException
+     * @param $orderId
+     *
+     * @return false|string Biller order dashboard section's HTML as string
+     *
+     * @throws \Biller\BusinessLogic\API\Http\Exceptions\RequestNotSuccessfulException
+     * @throws \Biller\BusinessLogic\Order\Exceptions\InvalidOrderReferenceException
+     * @throws \Biller\Infrastructure\Http\Exceptions\HttpCommunicationException
+     * @throws \Biller\Infrastructure\Http\Exceptions\HttpRequestException
      * @throws \Biller\Infrastructure\ORM\Exceptions\QueryFilterInvalidParamException
+     * @throws \Biller\Infrastructure\ORM\Exceptions\RepositoryNotRegisteredException
+     * @throws \PrestaShopDatabaseException
+     * @throws \PrestaShopException
      */
-    private function getExternalOrderUUID($idCart)
+    private function displayTabContent($orderId)
     {
-        /** @var  \Biller\PrestaShop\Repositories\OrderReferenceRepository $orderService */
+        $order = new Order($orderId);
 
-        $orderReferenceRepository = Biller\Infrastructure\ORM\RepositoryRegistry::getRepository(Biller\BusinessLogic\Order\OrderReference\Entities\OrderReference::class);
+        if (\Shop::getContext() !== \Shop::CONTEXT_SHOP || $order->module !== $this->name) {
+            return '';
+        }
 
-        $queryFilter = new Biller\Infrastructure\ORM\QueryFilter\QueryFilter();
-        $queryFilter->where('externalUUID', '=', $idCart);
+        \Biller\PrestaShop\Bootstrap::init();
+        $orderPending = $order->current_state ==
+            $this->getOrderStatusMapper()->getOrderStatusMap()[\Biller\Domain\Order\Status::BILLER_STATUS_PENDING];
+        $paymentLink = $orderPending ?
+            \Context::getContext()->link->getModuleLink(
+                $this->name,
+                'payment',
+                array('orderId' => $orderId, 'ajax' => true)
+            ) : null;
 
-        /** @var \Biller\BusinessLogic\Order\OrderReference\Entities\OrderReference $orderReference */
-        $orderReference = $orderReferenceRepository->selectOne($queryFilter);
+        $status = \Biller\PrestaShop\Utility\OrderStatusHandler::getBillerOrderStatus($order);
+        $accepted = $status->isAccepted();
+        $statusLabel =
+            \Biller\PrestaShop\Utility\Config\BillerOrderStatusMapping::getOrderStatusLabel((string)$status);
 
-        return $orderReference->getExternalUUID();
+        $this->getContext()->smarty->assign(
+            array(
+                'cancelURL' => $this->getAction(
+                    'Cancel',
+                    'cancelOrder',
+                    array(
+                        'ajax' => true
+                    )
+                ),
+                'captureURL' => $this->getAction(
+                    'Capture',
+                    'captureOrder',
+                    array(
+                        'ajax' => true
+                    )
+                ),
+                'orderId' => $orderId,
+                'status' => $statusLabel,
+                'paymentLink' => $paymentLink,
+                'accepted' => $accepted
+            )
+        );
+
+        return $this->display(__FILE__, $this->getTemplateAndJsVersion()->getOrderBillerSectionTemplate());
+    }
+
+    /**
+     * Creates Biller Installer.
+     *
+     * @return \Biller\PrestaShop\Utility\Installer
+     */
+    private function getInstaller()
+    {
+        $registerHookHandler = function ($key) {
+            return $this->registerHook($key);
+        };
+        $unregisterHookHandler = function ($key) {
+            return $this->unregisterHook($key);
+        };
+
+        return new Biller\PrestaShop\Utility\Installer(
+            Closure::bind($registerHookHandler, $this),
+            Closure::bind($unregisterHookHandler, $this),
+            $this->name
+        );
+    }
+
+    /**
+     * Returns order status mapping class.
+     *
+     * @return Biller\PrestaShop\Utility\Config\Contract\BillerOrderStatusMapping
+     */
+    private function getOrderStatusMapper()
+    {
+        /** @var \Biller\PrestaShop\Utility\Config\BillerOrderStatusMapping $orderStatusMapper */
+        return Biller\Infrastructure\ServiceRegister::getService(
+            Biller\PrestaShop\Utility\Config\Contract\BillerOrderStatusMapping::class
+        );
+    }
+
+    /**
+     * Returns notification hub service.
+     *
+     * @return \Biller\BusinessLogic\Notifications\NotificationHub
+     */
+    private function getNotificationHub()
+    {
+        /** @var \Biller\BusinessLogic\Notifications\NotificationHub $notificationHub */
+        return \Biller\Infrastructure\ServiceRegister::getService(
+            \Biller\BusinessLogic\Notifications\NotificationHub::class
+        );
+    }
+
+    /**
+     * Returns biller payment configuration service.
+     *
+     * @return Biller\PrestaShop\Utility\Config\BillerPaymentConfiguration
+     */
+    private function getPaymentConfiguration()
+    {
+        return Biller\Infrastructure\ServiceRegister::getService(
+            Biller\PrestaShop\Utility\Config\Contract\BillerPaymentConfiguration::class
+        );
+    }
+
+    /**
+     * Returns RedirectionVersion class depending on used PrestaShop version.
+     * For versions from 1.6.0.14 to 1.7.0.0 RedirectionVersion16 is returned.
+     * For versions from 1.7.0.0 to 1.7.7.0 RedirectionVersion17  is returned.
+     * For versions from 1.7.7.0+ RedirectionVersion177  is returned.
+     *
+     * @return Biller\PrestaShop\Utility\Version\Redirection\Contract\RedirectionVersionInterface
+     */
+    private function getRedirectionHandler()
+    {
+        return Biller\Infrastructure\ServiceRegister::getService(
+            Biller\PrestaShop\Utility\Version\Redirection\Contract\RedirectionVersionInterface::class
+        );
+    }
+
+    /**
+     * Returns TemplateAndJsVersion class depending on used PrestaShop version.
+     * For versions from 1.6.0.14 to 1.7.0.0 TemplateAndJsVersion16 is returned.
+     * For versions from 1.7.0.0 to 1.7.7.0 TemplateAndJsVersion17  is returned.
+     * For versions from 1.7.7.0+ TemplateAndJsVersion177  is returned.
+     *
+     * @return Biller\PrestaShop\Utility\Version\TemplateAndJs\Contract\TemplateAndJSVersionInterface
+     */
+    private function getTemplateAndJsVersion()
+    {
+        return Biller\Infrastructure\ServiceRegister::getService(
+            Biller\PrestaShop\Utility\Version\TemplateAndJs\Contract\TemplateAndJSVersionInterface::class
+        );
     }
 }
