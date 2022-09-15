@@ -1,0 +1,10 @@
+{
+  "name": "biller/prestashop",
+  "description": "Biller Prestashop Integration",
+  "version": "1.0.0",
+  "type": "library",
+  "require": {
+    "php": ">=5.6",
+    "ext-json": "*"
+  }
+}
