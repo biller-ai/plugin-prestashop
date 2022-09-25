@@ -1,4 +1,4 @@
-![Biller_logo](https://biller.ai/social.jpg)
+![Biller_logo](https://uploads-ssl.webflow.com/61b89977890776d3b40a4b50/62669b33f027b5a8254d430b_Artboard%201%20(2)%20(1)%20(3).png)
 
 # Biller PrestaShop plugin
 
