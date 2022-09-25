@@ -60,7 +60,7 @@ const notificationService = () => {
                     hideSpinner();
                     if (status === 200) {
                         let data = JSON.parse(response);
-                        if (data['pageCount'] === 1) {
+                        if (data['pageCount'] === 1 || data['pageCount'] === 0) {
                             btnNext.attr('disabled', true);
                         }
                         renderNotifications(data['notifications']);

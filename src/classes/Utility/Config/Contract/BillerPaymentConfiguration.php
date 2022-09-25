@@ -36,4 +36,20 @@ interface BillerPaymentConfiguration
      * @param string $description
      */
     public function setDescription($description);
+
+    /**
+     * Returns flag if Biller payment is enabled. Returns 1 if it is enabled, 0 otherwise.
+     *
+     * @return int
+     */
+    public function getEnabled();
+
+    /**
+     * Set flag if Biller payment is enabled.
+     *
+     * @param int $enable Flag to be set
+     *
+     * @return void
+     */
+    public function setEnabled($enable);
 }

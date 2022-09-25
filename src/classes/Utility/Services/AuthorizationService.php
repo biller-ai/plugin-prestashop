@@ -9,7 +9,9 @@ use Biller\BusinessLogic\Authorization\Exceptions\FailedToRetrieveAuthInfoExcept
 use Biller\BusinessLogic\Authorization\Exceptions\UnauthorizedException;
 use Biller\BusinessLogic\Integration\Authorization\UserInfoRepository;
 use Biller\Infrastructure\ServiceRegister;
+use Biller\PrestaShop\Utility\Config\BillerPaymentConfiguration;
 use Biller\PrestaShop\Utility\Config\Config;
+use Biller\PrestaShop\Utility\Config\Contract\BillerPaymentConfiguration as BillerPaymentConfigurationInterface;
 use Context;
 use Module;
 use Tools;
@@ -43,6 +45,7 @@ class AuthorizationService
         $password = Tools::getValue(Config::PASSWORD_KEY);
         $webshopuid = Tools::getValue(Config::WEBSHOP_UID_KEY);
         $mode = Tools::getValue(Config::MODE_KEY);
+        $enabled = Tools::getValue(Config::ENABLE_BUSINESS_INVOICE_KEY);
 
         if (!$username || !$password || !$webshopuid) {
             Context::getContext()->controller->errors[] =
@@ -58,6 +61,9 @@ class AuthorizationService
                     AuthorizationServiceInterface::class
                 );
                 $authorizationService->authorize($username, $password, $webshopuid, $mode);
+                /** @var BillerPaymentConfiguration $paymentConfiguration */
+                $paymentConfiguration = ServiceRegister::getService(BillerPaymentConfigurationInterface::class);
+                $paymentConfiguration->setEnabled($enabled);
             } catch (UnauthorizedException $e) {
                 $errors[] =
                     $this->module->l(

@@ -36,7 +36,7 @@ class BillerPaymentConfiguration implements Contract\BillerPaymentConfiguration
     {
         return $this->getConfigurationService()->getConfigValue(
             Config::NAME_KEY,
-            $this->module->l('Biller business invoice', self::FILE_NAME)
+            $this->module->l('Biller Business invoice', self::FILE_NAME)
         );
     }
 
@@ -55,7 +55,7 @@ class BillerPaymentConfiguration implements Contract\BillerPaymentConfiguration
     {
         return $this->getConfigurationService()->getConfigValue(
             Config::DESCRIPTION_KEY,
-            $this->module->l('The payment solution that advances both sides. We pay out every invoice on time.', self::FILE_NAME)
+            $this->module->l('The payment solution that advances both sides. We pay out every invoice on time. And buyers get to choose Buy Now, Pay Later.', self::FILE_NAME)
         );
     }
 
@@ -65,6 +65,25 @@ class BillerPaymentConfiguration implements Contract\BillerPaymentConfiguration
     public function setDescription($description)
     {
         $this->getConfigurationService()->saveConfigValue(Config::DESCRIPTION_KEY, $description);
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function getEnabled()
+    {
+        return $this->getConfigurationService()->getConfigValue(
+            Config::ENABLE_BUSINESS_INVOICE_KEY,
+            0
+        );
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function setEnabled($enable)
+    {
+        $this->getConfigurationService()->saveConfigValue(Config::ENABLE_BUSINESS_INVOICE_KEY, $enable);
     }
 
     /**

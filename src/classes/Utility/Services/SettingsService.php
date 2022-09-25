@@ -42,6 +42,7 @@ class SettingsService
 
         $name = Tools::getValue(Config::NAME_KEY);
         $description = Tools::getValue(Config::DESCRIPTION_KEY);
+        $enabled = Tools::getValue(Config::ENABLE_BUSINESS_INVOICE_KEY);
 
         if (!$name || !$description) {
             Context::getContext()->controller->errors[] =
@@ -55,6 +56,7 @@ class SettingsService
 
         $paymentConfiguration->setName($name);
         $paymentConfiguration->setDescription($description);
+        $paymentConfiguration->setEnabled($enabled);
 
         /** @var BillerOrderStatusMapping $orderStatusMapping */
         $orderStatusMapping = ServiceRegister::getService(BillerOrderStatusMappingInterface::class);
@@ -67,23 +69,5 @@ class SettingsService
         $orderStatusMapping->saveOrderStatusMap($orderStatusMap);
 
         return $errors;
-    }
-
-    /**
-     * Updates the enabled status of the Biller plugin if changed in configuration form.
-     *
-     * @return void
-     */
-    public function updateEnabledStatus()
-    {
-        $enabled = Tools::getValue(Config::ENABLE_BUSINESS_INVOICE_KEY);
-
-        if ($enabled !== $this->module->isEnabledForShopContext()) {
-            if ($enabled) {
-                $this->module->enable();
-            } else {
-                $this->module->disable();
-            }
-        }
     }
 }

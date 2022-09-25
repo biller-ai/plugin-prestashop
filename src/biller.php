@@ -41,9 +41,11 @@ class Biller extends PaymentModule
 
         parent::__construct();
 
-        $this->displayName = $this->l('Biller business invoice');
-        $this->description = $this->l('The payment solution that advances both sides. We pay out every invoice on time.');
-        $this->confirmUninstall = $this->l('Are you sure you want to uninstall the biller module?');
+        $this->displayName = $this->l('Biller Business invoice');
+        $this->description = $this->l(
+            'The payment solution that advances both sides. We pay out every invoice on time. And buyers get to choose Buy Now, Pay Later.'
+        );
+        $this->confirmUninstall = $this->l('Are you sure you want to uninstall the Biller module?');
     }
 
     /**
@@ -138,7 +140,6 @@ class Biller extends PaymentModule
 
         if ($formSubmitted) {
             $errors = $authorizationService->authorize();
-            $settingsService->updateEnabledStatus();
 
             if ($loggedIn) {
                 $errors = array_merge($errors, $settingsService->saveSettings());
@@ -204,6 +205,21 @@ class Biller extends PaymentModule
                     $this->l($exception->getMessage())
                 );
 
+                if ($params['order']->current_state != $this->getOrderStatusMapper()->getOrderStatusMap(
+                    )[\Biller\Domain\Order\Status::BILLER_STATUS_CAPTURED] && $params['order']->current_state != $this->getOrderStatusMapper(
+                    )->getOrderStatusMap()[\Biller\Domain\Order\Status::BILLER_STATUS_PARTIALLY_REFUNDED]) {
+                    $this->getNotificationHub()->pushWarning(
+                        new Biller\BusinessLogic\Notifications\NotificationText(
+                            'biller.payment.order.synchronization.warning.title'
+                        ),
+                        new Biller\BusinessLogic\Notifications\NotificationText(
+                            'biller.payment.order.synchronization.warning.description'
+                        ),
+                        $params['order']->id
+                    );
+                }
+                \Biller\PrestaShop\Bootstrap::init();
+
                 Tools::redirectAdmin($this->getRedirectionHandler()->generateOrderPageUrl($params['order']));
             }
         }
@@ -256,6 +272,21 @@ class Biller extends PaymentModule
                     'error',
                     $this->l($exception->getMessage())
                 );
+
+                $order = new \Order(Tools::getValue('id_order'));
+                if ($order->current_state != $this->getOrderStatusMapper()->getOrderStatusMap(
+                    )[\Biller\Domain\Order\Status::BILLER_STATUS_CAPTURED] && $order->current_state != $this->getOrderStatusMapper(
+                    )->getOrderStatusMap()[\Biller\Domain\Order\Status::BILLER_STATUS_PARTIALLY_REFUNDED]) {
+                    $this->getNotificationHub()->pushWarning(
+                        new Biller\BusinessLogic\Notifications\NotificationText(
+                            'biller.payment.order.synchronization.warning.title'
+                        ),
+                        new Biller\BusinessLogic\Notifications\NotificationText(
+                            'biller.payment.order.synchronization.warning.description'
+                        ),
+                        $order->id
+                    );
+                }
 
                 Tools::redirectAdmin(
                     $this->getRedirectionHandler()->generateOrderPageUrl((new \Order(Tools::getValue('id_order'))))
@@ -321,39 +352,44 @@ class Biller extends PaymentModule
      */
     public function hookDisplayBackOfficeHeader()
     {
-        $currentController = Tools::getValue('controller');
+        if ($this->isEnabled($this->name)) {
+            $currentController = Tools::getValue('controller');
 
-        if (
-            $message = $this->l(
-                \Biller\PrestaShop\Utility\FlashBag::getInstance()->getMessage('error')
-            )
-        ) {
-            $this->getContext()->controller->errors[] = Tools::displayError($message);
-        }
-
-        if (
-            $message = $this->l(
-                \Biller\PrestaShop\Utility\FlashBag::getInstance()->getMessage('success')
-            )
-        ) {
-            $this->getContext()->controller->confirmations[] = $message;
-        }
-
-        if ($currentController === 'AdminOrders') {
-            $this->smarty->assign(array(
-                'companyInfoURL' => $this->getAction('CompanyInfo', 'fetchCompanyInfo', array('ajax' => true)),
-                'orderCreateAction' => $this->getAction(
-                    'CreateOrder',
-                    'createOrder',
-                    array(
-                        'ajax' => true
-                    )
+            if (
+                $message = $this->l(
+                    \Biller\PrestaShop\Utility\FlashBag::getInstance()->getMessage('error')
                 )
-            ));
+            ) {
+                $this->getContext()->controller->errors[] = Tools::displayError($message);
+            }
 
-            return $this->display($this->getPathUri(), $this->getTemplateAndJsVersion()->getAddOrderSummaryTemplate());
+            if (
+                $message = $this->l(
+                    \Biller\PrestaShop\Utility\FlashBag::getInstance()->getMessage('success')
+                )
+            ) {
+                $this->getContext()->controller->confirmations[] = $message;
+            }
+
+            if ($currentController === 'AdminOrders') {
+                $this->smarty->assign(array(
+                    'companyInfoURL' => $this->getAction('CompanyInfo', 'fetchCompanyInfo', array('ajax' => true)),
+                    'orderCreateAction' => $this->getAction(
+                        'CreateOrder',
+                        'createOrder',
+                        array(
+                            'ajax' => true
+                        )
+                    )
+                ));
+                \Biller\PrestaShop\Bootstrap::init();
+
+                return $this->display(
+                    $this->getPathUri(),
+                    $this->getTemplateAndJsVersion()->getAddOrderSummaryTemplate()
+                );
+            }
         }
-
         return '';
     }
 
@@ -861,9 +897,18 @@ class Biller extends PaymentModule
         $authorizationService = \Biller\Infrastructure\ServiceRegister::getService(
             \Biller\PrestaShop\Utility\Services\AuthorizationService::class
         );
+        /** @var \Biller\PrestaShop\InfrastructureService\ConfigurationService $configurationService */
+        $configurationService = \Biller\Infrastructure\ServiceRegister::getService(
+            \Biller\Infrastructure\Configuration\Configuration::CLASS_NAME
+        );
+
+        $enabled = $configurationService->getConfigValue(
+            \Biller\PrestaShop\Utility\Config\Config::ENABLE_BUSINESS_INVOICE_KEY
+        );
 
         return
-            $authorizationService->loggedIn()
+            $enabled
+            && $authorizationService->loggedIn()
             && $this->isMethodEnabled()
             && $this->isValidCountry($billingCountryId)
             && $this->isValidCurrency($currencyId);

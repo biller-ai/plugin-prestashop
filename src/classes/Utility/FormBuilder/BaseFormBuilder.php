@@ -3,7 +3,9 @@
 namespace Biller\PrestaShop\Utility\FormBuilder;
 
 use Biller\BusinessLogic\Integration\Authorization\UserInfoRepository as UserInfoRepositoryInterface;
+use Biller\Infrastructure\Configuration\Configuration as ConfigurationInterface;
 use Biller\Infrastructure\ServiceRegister;
+use Biller\PrestaShop\InfrastructureService\ConfigurationService;
 use Biller\PrestaShop\Repositories\UserInfoRepository;
 use Biller\PrestaShop\Utility\Config\Config;
 use Biller;
@@ -26,7 +28,7 @@ class BaseFormBuilder
     /** @var string */
     const TAB_NAME_AUTHORIZATION = 'authorization';
 
-    /** @var string[] Base form input field keys.*/
+    /** @var string[] Base form input field keys. */
     const INPUT_FIELD_KEYS = array(
         Config::MODE_KEY,
         Config::WEBSHOP_UID_KEY,
@@ -100,7 +102,7 @@ class BaseFormBuilder
 
         $inputs[] = array(
             'type' => 'switch',
-            'label' => $this->module->l('Enable Biller business invoice', self::FILE_NAME),
+            'label' => $this->module->l('Enable Biller Business invoice', self::FILE_NAME),
             'desc' => $this->module->l('Enable/disable Biller payment method.', self::FILE_NAME),
             'name' => Config::ENABLE_BUSINESS_INVOICE_KEY,
             'tab' => self::TAB_NAME_AUTHORIZATION,
@@ -221,8 +223,11 @@ class BaseFormBuilder
             $values[Config::USERNAME_KEY] = $userInfo ? $userInfo->getUsername() : '';
             $values[Config::PASSWORD_KEY] = $userInfo ? $userInfo->getPassword() : '';
         }
-
-        $values[Config::ENABLE_BUSINESS_INVOICE_KEY] = (int)$this->module->isEnabledForShopContext();
+        /** @var ConfigurationService $configurationService */
+        $configurationService = ServiceRegister::getService(ConfigurationInterface::CLASS_NAME);
+        $values[Config::ENABLE_BUSINESS_INVOICE_KEY] = $configurationService->getConfigValue(
+            Config::ENABLE_BUSINESS_INVOICE_KEY
+        );
 
         return $values;
     }

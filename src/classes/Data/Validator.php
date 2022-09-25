@@ -63,7 +63,7 @@ class Validator
             Tools::getValue('vat_number') &&
             !is_numeric(Tools::getValue('vat_number'))
         ) {
-            self::addError(Module::getInstanceByName('biller')->l('Invalid field: Vat number should be a numeric value!', self::FILE_NAME));
+            self::addError(Module::getInstanceByName('biller')->l('Invalid field: Vat number should be a numeric value.', self::FILE_NAME));
         }
     }
 
@@ -79,7 +79,7 @@ class Validator
             Tools::getValue('registration_number') &&
             !is_numeric(Tools::getValue('registration_number'))
         ) {
-            self::addError(Module::getInstanceByName('biller')->l('Invalid field: Registration number should be a numeric value!', self::FILE_NAME));
+            self::addError(Module::getInstanceByName('biller')->l('Registration number should be a numeric value.', self::FILE_NAME));
         }
     }
 
@@ -94,7 +94,7 @@ class Validator
             Tools::getIsset('company_name') &&
             !Tools::getValue('company_name')
         ) {
-            self::addError(Module::getInstanceByName('biller')->l('Company name is required!', self::FILE_NAME));
+            self::addError(Module::getInstanceByName('biller')->l('Company name cannot be empty.', self::FILE_NAME));
         }
     }
 

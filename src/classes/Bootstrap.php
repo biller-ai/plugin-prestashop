@@ -54,6 +54,7 @@ use Biller\PrestaShop\Utility\Version\Hooks\HooksVersion177;
 use Biller\PrestaShop\Utility\Version\OrderRefundMapper\Contract\OrderRefundMapperVersion;
 use Biller\PrestaShop\Utility\Version\OrderRefundMapper\OrderRefundMapperVersion16;
 use Biller\PrestaShop\Utility\Version\OrderRefundMapper\OrderRefundMapperVersion17;
+use Biller\PrestaShop\Utility\Version\OrderRefundMapper\OrderRefundMapperVersion177;
 use Biller\PrestaShop\Utility\Version\TemplateAndJs\TemplateAndJsVersion16;
 use Biller\PrestaShop\Utility\Version\TemplateAndJs\TemplateAndJsVersion17;
 use Biller\PrestaShop\Utility\Version\TemplateAndJs\TemplateAndJsVersion177;
@@ -246,7 +247,11 @@ class Bootstrap extends BootstrapComponent
                     return new OrderRefundMapperVersion16();
                 }
 
-                return new OrderRefundMapperVersion17();
+                if (version_compare(_PS_VERSION_, '1.7.7.0', '<')) {
+                    return new OrderRefundMapperVersion17();
+                }
+
+                return new OrderRefundMapperVersion177();
             }
         );
 

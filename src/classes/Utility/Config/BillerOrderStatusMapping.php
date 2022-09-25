@@ -170,7 +170,7 @@ class BillerOrderStatusMapping implements Contract\BillerOrderStatusMapping
     /**
      * Returns OrderRefundMapper class depending on used PrestaShop version.
      * For versions from 1.6.0.14 to 1.7.0.0 OrderRefundMapperVersion16 is returned.
-     * For versions from 1.7.0.0+ OrderRefundMapperVersion17  is returned.
+     * For versions from 1.7.0.0+ OrderRefundMapperVersion177  is returned.
      *
      * @return OrderRefundMapperVersion
      */

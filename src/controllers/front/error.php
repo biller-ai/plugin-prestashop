@@ -49,7 +49,7 @@ class BillerErrorModuleFrontController extends ModuleFrontController
             );
         }
 
-        $message = $this->module->l('Biller payment transaction failed. Please choose another billing option or change the company data.', self::FILE_NAME);
+        $message = $this->module->l('The unexpected error occurred, please select different payment method.', self::FILE_NAME);
 
         $this->getRedirectionHandler()->errorRedirect($message);
     }

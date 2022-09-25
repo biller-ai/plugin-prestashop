@@ -67,6 +67,45 @@ class OrderRefundMapperVersion16 extends OrderRefundMapperVersion
         ) : $this->getPartialRefundLines($lines, $quantity);
     }
 
+
+    /**
+     * Maps product properties from PrestaShop 1.6 product to RefundLine. Used for Product return action
+     *
+     * @param int[] $lines array of order detail IDs
+     * @param int[] $quantity array of Quantity to be refunded
+     *
+     * @return RefundLine[]
+     *
+     * @throws InvalidCurrencyCode
+     * @throws InvalidTaxPercentage
+     * @throws PrestaShopDatabaseException
+     * @throws PrestaShopException
+     */
+    protected function getFullRefundLines($lines, $quantity)
+    {
+        $refundLines = array();
+        $cart = Context::getContext()->cart;
+
+        foreach ($lines as $product) {
+            $orderDetail = new OrderDetail($product);
+            $refundLines[] = new RefundLine(
+                $orderDetail->product_id,
+                $this->getTaxableAmount(
+                    $orderDetail->unit_price_tax_excl * $quantity[$product],
+                    $orderDetail->unit_price_tax_incl * $quantity[$product]
+                ),
+                $quantity[$product],
+                $cart->id_address_invoice
+            );
+        }
+
+        if (Tools::getValue('shippingBack') === 'on') {
+            $refundLines[] = $this->generateShippingLine($cart->getTotalShippingCost());
+        }
+
+        return $refundLines;
+    }
+
     /**
      * Maps product properties from PrestaShop 1.6 product to RefundLine. Used for Partial refund action.
      *
@@ -80,7 +119,7 @@ class OrderRefundMapperVersion16 extends OrderRefundMapperVersion
      * @throws PrestaShopDatabaseException
      * @throws PrestaShopException
      */
-    public function getPartialRefundLines($lines, $quantity)
+    private function getPartialRefundLines($lines, $quantity)
     {
         $refundLines = array();
         $cart = Context::getContext()->cart;
@@ -104,41 +143,9 @@ class OrderRefundMapperVersion16 extends OrderRefundMapperVersion
                 $cart->id_address_invoice
             );
         }
-        $refundLines[] = $this->generateShippingLine(Tools::getValue('partialRefundShippingCost'));
 
-        return $refundLines;
-    }
-
-    /**
-     * Maps product properties from PrestaShop 1.6 product to RefundLine. Used for Product return action
-     *
-     * @param int[] $lines array of order detail IDs
-     * @param int[] $quantity array of Quantity to be refunded
-     *
-     * @return RefundLine[]
-     *
-     * @throws InvalidCurrencyCode
-     * @throws InvalidTaxPercentage
-     * @throws PrestaShopDatabaseException
-     * @throws PrestaShopException
-     */
-    private function getFullRefundLines($lines, $quantity)
-    {
-        $refundLines = array();
-        $cart = Context::getContext()->cart;
-
-        foreach ($lines as $product) {
-            $orderDetail = new OrderDetail($product);
-            $refundLines[] = new RefundLine(
-                $orderDetail->product_id,
-                $this->getTaxableAmount($orderDetail->unit_price_tax_excl, $orderDetail->unit_price_tax_incl),
-                $quantity[$product],
-                $cart->id_address_invoice
-            );
-        }
-
-        if (Tools::getValue('shippingBack') === 'on') {
-            $refundLines[] = $this->generateShippingLine($cart->getTotalShippingCost());
+        if (Tools::getValue('partialRefundShippingCost') != 0) {
+            $refundLines[] = $this->generateShippingLine(Tools::getValue('partialRefundShippingCost'));
         }
 
         return $refundLines;
@@ -152,7 +159,7 @@ class OrderRefundMapperVersion16 extends OrderRefundMapperVersion
      *
      * @return float
      */
-    private function getTaxExclFromTaxIncl($taxIncl, $taxRate)
+    protected function getTaxExclFromTaxIncl($taxIncl, $taxRate)
     {
         return $taxRate ? $taxIncl / (1 + $taxRate / 100.0) : $taxIncl;
     }

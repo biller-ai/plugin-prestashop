@@ -31,7 +31,7 @@ class TranslationUtility
             $module->l('Cancellation is rejected by Biller.', self::FILE_NAME);
         $this->translations['biller.payment.order.cancellation.description'] = $module->l('Biller error message: %s', self::FILE_NAME);
         $this->translations['biller.payment.webhook.notification.order_status_changed_error.title'] =
-            $module->l('Order status update failed!', self::FILE_NAME);
+            $module->l('Order line refund failed', self::FILE_NAME);
         $this->translations['biller.payment.webhook.notification.order_status_changed_error.description'] =
             $module->l('Error message: %s', self::FILE_NAME);
         $this->translations['biller.payment.amount.refund.error.title'] = $module->l('Order amount refund failed!', self::FILE_NAME);
@@ -56,11 +56,11 @@ class TranslationUtility
         $this->translations['biller.payment.order.synchronization.warning.title'] =
             $module->l('Shop changes not synchronized.', self::FILE_NAME);
         $this->translations['biller.payment.order.synchronization.warning.description'] =
-            $module->l('Order changes are detected but not synchronized to the Biller platform. Order update is not permitted by Biller.', self::FILE_NAME);
+            $module->l('Order changes are not synchronized to Biller.', self::FILE_NAME);
         $this->translations['biller.payment.address.synchronization.warning.title'] =
             $module->l('Shop changes not synchronized.', self::FILE_NAME);
         $this->translations['biller.payment.address.synchronization.warning.description'] =
-            $module->l('Address %s changes are detected but not synchronized to the Biller platform. Address is bound to order %s so it\'s update is not permitted by Biller.', self::FILE_NAME);
+            $module->l('Order changes are not synchronized to Biller.', self::FILE_NAME);
     }
 
     /**

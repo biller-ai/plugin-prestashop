@@ -4,6 +4,7 @@ namespace Biller\PrestaShop\Utility\Version\Redirection;
 
 use Biller\PrestaShop\Utility\Version\Redirection\Contract\RedirectionVersionInterface;
 use Context;
+use Tools;
 
 /**
  * Class RedirectionVersion17. Used for redirection and generating order page url.
