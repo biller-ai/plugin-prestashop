@@ -37,9 +37,8 @@ class OrderRefundMapperVersion16 extends OrderRefundMapperVersion
     {
         $amount = 0;
 
-        foreach ($order->getCartProducts() as $product) {
-            $resume = OrderSlip::getProductSlipResume($product['id_order_detail']);
-            $amount += (!empty($resume['amount_tax_incl'])) ? $resume['amount_tax_incl'] : 0.0;
+        foreach ($order->getOrderDetailList() as $orderDetail) {
+            $amount += (!empty($orderDetail['reduction_amount_tax_incl'])) ? $orderDetail['reduction_amount_tax_incl'] : 0.0;
         }
 
         foreach (OrderSlip::getOrdersSlip($order->id_customer, $order->id) as $orderSlip) {

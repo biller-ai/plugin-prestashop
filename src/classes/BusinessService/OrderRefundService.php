@@ -62,6 +62,26 @@ class OrderRefundService implements OrderRefundServiceInterface
 
                 $orderDetail->update();
             }
+            if ($order->total_shipping > 0) {
+                $orderSlip = new \OrderSlip();
+                $orderSlip->id_customer = $order->id_customer;
+                $orderSlip->id_order = $order->id;
+                $totalShippingTaxIncl = 0;
+                $totalShippingTaxExcl = 0;
+                foreach (\OrderSlip::getOrdersSlip($order->id_customer, $order->id) as $slip) {
+                    if ($slip['shipping_cost']) {
+                        $totalShippingTaxIncl += $slip['total_shipping_tax_incl'];
+                        $totalShippingTaxExcl += $slip['total_shipping_tax_excl'];
+                    }
+                }
+                $orderSlip->total_shipping_tax_incl = $order->total_shipping_tax_incl - $totalShippingTaxIncl;
+                $orderSlip->total_shipping_tax_excl = $order->total_shipping_tax_excl - $totalShippingTaxExcl;
+                $orderSlip->conversion_rate = 1.0;
+                $orderSlip->total_products_tax_excl = $order->getTotalProductsWithoutTaxes();
+                $orderSlip->total_products_tax_incl = $order->getTotalProductsWithTaxes();
+                $orderSlip->shipping_cost = 1;
+                $orderSlip->add();
+            }
         } catch (Exception $exception) {
             Logger::logError($exception->getMessage());
         }
@@ -87,7 +107,6 @@ class OrderRefundService implements OrderRefundServiceInterface
             }
 
             $orderDetails = $order->getOrderDetailList();
-
             foreach ($billerRefunds as $billerRefund) {
                 $orderDetail = $this->getOrderDetailByProductId($orderDetails, $billerRefund->getProductId());
 
@@ -122,7 +141,12 @@ class OrderRefundService implements OrderRefundServiceInterface
                     $billerRefund->getAmount()->getAmountExclTax()->getPriceInCurrencyUnits();
                 $orderDetail->total_refunded_tax_incl =
                     $billerRefund->getAmount()->getAmountInclTax()->getPriceInCurrencyUnits();
-
+                $orderDetail->reduction_amount = $orderDetail->product_quantity - $billerRefund->getRefundableQuantity(
+                    );
+                $orderDetail->reduction_amount_tax_excl = $billerRefund->getAmount()->getAmountExclTax(
+                )->getPriceInCurrencyUnits();
+                $orderDetail->reduction_amount_tax_incl = $billerRefund->getAmount()->getAmountInclTax(
+                )->getPriceInCurrencyUnits();
                 $orderDetail->update();
             }
         } catch (Exception $exception) {

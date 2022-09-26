@@ -74,11 +74,16 @@ class OrderStatusHandler
             if (!empty($refundError)) {
                 throw new BillerRefundRejectedException($refundError);
             }
+
+            self::refundLinesOnPresta($order);
         } catch (Exception $exception) {
-            FlashBag::getInstance()->setMessage('error', Module::getInstanceByName('biller')->l(
-                $exception->getMessage(),
-                self::FILE_NAME
-            ));
+            FlashBag::getInstance()->setMessage(
+                'error',
+                Module::getInstanceByName('biller')->l(
+                    $exception->getMessage(),
+                    self::FILE_NAME
+                )
+            );
 
             Tools::redirectAdmin(self::getRedirectionHandler()->generateOrderPageUrl($order));
         }
@@ -118,10 +123,13 @@ class OrderStatusHandler
                 ),
                 $order->id
             );
-            FlashBag::getInstance()->setMessage('error', Module::getInstanceByName('biller')->l(
-                $exception->getMessage(),
-                self::FILE_NAME
-            ));
+            FlashBag::getInstance()->setMessage(
+                'error',
+                Module::getInstanceByName('biller')->l(
+                    $exception->getMessage(),
+                    self::FILE_NAME
+                )
+            );
 
             Tools::redirectAdmin(self::getRedirectionHandler()->generateOrderPageUrl($order));
         }
@@ -327,5 +335,51 @@ class OrderStatusHandler
     private static function getOrderRefundMapperVersion()
     {
         return ServiceRegister::getService(OrderRefundMapperVersion::class);
+    }
+
+    /**
+     * Refund all items on PrestaShop in case of full refund.
+     *
+     * @param Order $order Order that is being refunded
+     *
+     * @return void
+     *
+     * @throws PrestaShopDatabaseException
+     * @throws PrestaShopException
+     */
+    private static function refundLinesOnPresta($order)
+    {
+        $orderDetails = $order->getOrderDetailList();
+
+        foreach ($orderDetails as $orderDetail) {
+            $orderDetail = new \OrderDetail($orderDetail['id_order_detail']);
+
+            $orderDetail->product_quantity_refunded = $orderDetail->product_quantity;
+            $orderDetail->total_refunded_tax_excl = $orderDetail->total_price_tax_excl;
+            $orderDetail->total_refunded_tax_incl = $orderDetail->total_price_tax_incl;
+
+            $orderDetail->update();
+        }
+
+        if ($order->total_shipping > 0) {
+            $orderSlip = new \OrderSlip();
+            $orderSlip->id_customer = $order->id_customer;
+            $orderSlip->id_order = $order->id;
+            $totalShippingTaxIncl = 0;
+            $totalShippingTaxExcl = 0;
+            foreach (\OrderSlip::getOrdersSlip($order->id_customer, $order->id) as $slip) {
+                if ($slip['shipping_cost']) {
+                    $totalShippingTaxIncl += $slip['total_shipping_tax_incl'];
+                    $totalShippingTaxExcl += $slip['total_shipping_tax_excl'];
+                }
+            }
+            $orderSlip->total_shipping_tax_incl = $order->total_shipping_tax_incl - $totalShippingTaxIncl;
+            $orderSlip->total_shipping_tax_excl = $order->total_shipping_tax_excl - $totalShippingTaxExcl;
+            $orderSlip->conversion_rate = 1.0;
+            $orderSlip->total_products_tax_excl = $order->getTotalProductsWithoutTaxes();
+            $orderSlip->total_products_tax_incl = $order->getTotalProductsWithTaxes();
+            $orderSlip->shipping_cost = 1;
+            $orderSlip->add();
+        }
     }
 }
