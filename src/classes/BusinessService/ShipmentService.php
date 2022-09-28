@@ -56,7 +56,7 @@ class ShipmentService implements ShipmentServiceInterface
             $order->id_cart,
             null,
             $this->getDiscount(),
-            Amount::fromFloat($order->getTotalPaid(), $this->getCurrency())
+            Amount::fromFloat($order->getOrdersTotalPaid(), $this->getCurrency())
         );
     }
 

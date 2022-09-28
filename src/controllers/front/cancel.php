@@ -30,22 +30,6 @@ class BillerCancelModuleFrontController extends ModuleFrontController
      */
     public function postProcess()
     {
-        $isPaymentLink = Tools::getIsset('orderId');
-
-        if ($isPaymentLink) {
-            $order = new Order(Tools::getValue('orderId'));
-
-            /** @var OrderStatusTransitionService $orderStatusTransitionService */
-            $orderStatusTransitionService = ServiceRegister::getService(
-                OrderStatusTransitionServiceInterface::class
-            );
-
-            $orderStatusTransitionService->updateStatus(
-                $order->id_cart,
-                Status::fromString(Status::BILLER_STATUS_CANCELLED)
-            );
-        }
-
         $this->getRedirectionHandler()->cancelRedirect();
     }
 

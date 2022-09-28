@@ -6,6 +6,8 @@ use Biller\PrestaShop\Bootstrap;
 use Biller\PrestaShop\Utility\Services\CompanyInfoService;
 use Biller\PrestaShop\Utility\Services\OrderService;
 use Biller\PrestaShop\Utility\Version\Redirection\Contract\RedirectionVersionInterface;
+use Biller\PrestaShop\Utility\Hash;
+use Biller\PrestaShop\Exception\BillerTokenNotValidException;
 
 /**
  * Class BillerPaymentModuleFrontController. Used for handling payment request on checkout page.
@@ -33,6 +35,10 @@ class BillerPaymentModuleFrontController extends ModuleFrontController
             $orderId = Tools::getValue('orderId', null);
             if ($orderId) {
                 // payment link
+                $token = Tools::getValue('token');
+                if (!Hash::getInstance()->checkKey($orderId, $token)) {
+                    throw  new BillerTokenNotValidException('Order token is not valid.');
+                }
                 $order = new Order($orderId);
                 $cart = new Cart($order->id_cart);
             } else {
@@ -66,10 +72,28 @@ class BillerPaymentModuleFrontController extends ModuleFrontController
     private function redirectError($messages)
     {
         foreach ($messages as $message) {
-            $this->errors[] = $this->module->l($message, self::FILE_NAME);
+            $this->errors[] = $this->module->l($this->formatMessage($message), self::FILE_NAME);
         }
 
         $this->getRedirectionHandler()->paymentErrorRedirect($this->errors);
+    }
+
+    /**
+     * If message is type of json string, decode it and return only values
+     *
+     * @param string $message Message to be decoded
+     *
+     * @return string
+     */
+    private function formatMessage($message)
+    {
+        $decodedMessage = json_decode($message, true);
+
+        if (!$decodedMessage) {
+            return $message;
+        }
+
+        return implode('', $decodedMessage);
     }
 
     /**

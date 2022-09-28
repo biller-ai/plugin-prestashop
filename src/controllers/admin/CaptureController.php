@@ -50,10 +50,15 @@ class CaptureController extends ModuleAdminController
             Response::die200();
         } catch (Exception $exception) {
             Logger::logError($exception->getMessage());
-            Response::die400(array('message' => $this->module->l(
-                $exception->getMessage(),
-                self::FILE_NAME
-            )));
+
+            FlashBag::getInstance()->setMessage('error', $exception->getMessage());
+
+            Response::die400(array(
+                'message' => $this->module->l(
+                    $exception->getMessage(),
+                    self::FILE_NAME
+                )
+            ));
         }
     }
 

@@ -38,6 +38,7 @@ use Biller\PrestaShop\Utility\Version\Redirection\Contract\RedirectionVersionInt
 use Cart;
 use Module;
 use Order;
+use phpDocumentor\Reflection\Types\Context;
 use Tools;
 use Exception;
 use PrestaShopDatabaseException;
@@ -181,6 +182,15 @@ class OrderStatusHandler
                     self::FILE_NAME
                 )
             );
+
+            if(Tools::getIsset('controller') && Tools::getValue('controller') === 'Capture') {
+                Response::die400(array(
+                    'message' => \Module::getInstanceByName('biller')->l(
+                        $exception->getMessage(),
+                        self::FILE_NAME
+                    )
+                ));
+            }
 
             Tools::redirectAdmin(self::getRedirectionHandler()->generateOrderPageUrl($order));
         }

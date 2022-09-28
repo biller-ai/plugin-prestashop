@@ -34,9 +34,13 @@ class OrderStatusTransitionService implements OrderStatusTransitionServiceInterf
 
         $idOrder = Order::getOrderByCartId($orderUUID);
 
+        if (!$idOrder) {
+            return;
+        }
+
         $statusId = $orderStatusMapping->getOrderStatusMap()[(string)$status];
 
-        if ($statusId && $idOrder && $statusId !== (new \Order($idOrder))->current_state) {
+        if ($statusId && $statusId !== (new \Order($idOrder))->current_state) {
             $history = new \OrderHistory();
             $history->id_order = $idOrder;
             $history->id_employee = isset(\Context::getContext()->employee->id) ? \Context::getContext(

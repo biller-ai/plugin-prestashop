@@ -8,7 +8,11 @@ $(document).ready(function () {
     let formConditions = document.getElementById('conditions-to-approve');
     let checkBox = $(formConditions).find('[type=checkbox]');
     let billerForm = document.getElementById('biller-form');
-    let billerDiv = billerForm.parentNode;
+    let billerDiv;
+    if (billerForm) {
+        billerDiv = billerForm.parentNode;
+    }
+
     let selected = $("input[type='radio'][name='payment-option']:checked");
 
     let observer = new MutationObserver(function (mutations) {
@@ -19,7 +23,9 @@ $(document).ready(function () {
         });
     });
 
-    observer.observe(billerDiv, {attributes: true, attributeFilter: ['style']});
+    if(billerDiv) {
+        observer.observe(billerDiv, {attributes: true, attributeFilter: ['style']});
+    }
     checkBox.change(function (event) {
         if (checkBox.is(":checked") && !companyName.val() && selected.attr('data-module-name') === 'biller') {
             disablePlaceOrderButton();
@@ -36,8 +42,7 @@ $(document).ready(function () {
         }
     });
 
-    function disablePlaceOrderButton()
-    {
+    function disablePlaceOrderButton() {
         placeOrder.attr('disabled', 'disabled');
         placeOrder.addClass('disabled');
     }

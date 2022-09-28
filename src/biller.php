@@ -1061,7 +1061,7 @@ class Biller extends PaymentModule
             \Context::getContext()->link->getModuleLink(
                 $this->name,
                 'payment',
-                array('orderId' => $orderId, 'ajax' => true)
+                array('orderId' => $orderId, 'ajax' => true, 'token' => Biller\PrestaShop\Utility\Hash::getInstance()->hashKey($orderId))
             ) : null;
 
         $status = \Biller\PrestaShop\Utility\OrderStatusHandler::getBillerOrderStatus($order);
